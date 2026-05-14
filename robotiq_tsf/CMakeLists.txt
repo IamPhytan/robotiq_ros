@@ -111,8 +111,13 @@ ament_target_dependencies(tactile_total_sum_node
   ament_index_cpp
 )
 
+install(TARGETS ${PROJECT_NAME}_algorithms
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 install(TARGETS
-  ${PROJECT_NAME}_algorithms
   poll_data_node
   tactile_total_sum_node
   DESTINATION lib/${PROJECT_NAME}
