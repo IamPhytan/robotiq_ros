@@ -26,7 +26,6 @@ set(MSG_FILES
   "msg/Dynamic.msg"
   "msg/EulerAngle.msg"
   "msg/Gyroscope.msg"
-  "msg/Magnetometer.msg"
   "msg/Quaternion.msg"
   "msg/Sensor.msg"
   "msg/StaticData.msg"
