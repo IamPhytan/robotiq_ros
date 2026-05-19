@@ -58,7 +58,6 @@ include_directories(
 
 add_library(${PROJECT_NAME}_algorithms
   src/MadgwickAHRS.cpp
-  src/MadgwickAHRS2.cpp
 )
 
 target_include_directories(${PROJECT_NAME}_algorithms

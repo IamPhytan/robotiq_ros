@@ -74,16 +74,17 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 #include "robotiq_tsf/msg/dynamic.hpp"
 #include "robotiq_tsf/msg/euler_angle.hpp"
 #include "robotiq_tsf/msg/gyroscope.hpp"
-// #include "robotiq_tsf/msg/quaternion.hpp"  // Quaternion topic disabled pending validation
+#include "robotiq_tsf/msg/quaternion.hpp"
 #include "robotiq_tsf/msg/sensor.hpp"
 #include "robotiq_tsf/msg/static_data.hpp"
 #include "robotiq_tsf/msg/timestamp.hpp"
 #include "robotiq_tsf/srv/tactile_sensors.hpp"
 #include "robotiq_tsf/MadgwickAHRS.h"
-#include "robotiq_tsf/MadgwickAHRS2.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fcntl.h>
@@ -115,7 +116,7 @@ rclcpp::Publisher<msg::Dynamic>::SharedPtr g_dynamic_pub;
 rclcpp::Publisher<msg::Accelerometer>::SharedPtr g_accel_pub;
 rclcpp::Publisher<msg::Gyroscope>::SharedPtr g_gyro_pub;
 rclcpp::Publisher<msg::EulerAngle>::SharedPtr g_euler_pub;
-// rclcpp::Publisher<msg::Quaternion>::SharedPtr g_quat_pub;  // disabled pending validation
+rclcpp::Publisher<msg::Quaternion>::SharedPtr g_quat_pub;
 rclcpp::Publisher<msg::Timestamp>::SharedPtr g_timestamp_pub;
 rclcpp::Service<srv::TactileSensors>::SharedPtr g_service;
 
@@ -135,9 +136,29 @@ double EllapsedMicroSeconds;
 //IMU Biases:
 const int BIASCalculationIterations=5000; // Number of samples we want to collect to compute IMU biases
 int BIASCalculationIterator=0;
-float norm_bias1=0,norm_bias2=0;
 float ax1_bias=0,ay1_bias=0,az1_bias=0,ax2_bias=0,ay2_bias=0,az2_bias=0;
 float gx1_bias=0,gy1_bias=0,gz1_bias=0,gx2_bias=0,gy2_bias=0,gz2_bias=0;
+
+// AHRS filter state — one instance per finger, owned by the IO thread.
+MadgwickFilter g_filter[FINGER_COUNT];
+
+// Per-finger MCU timestamp (milliseconds, as exposed by the firmware) of the
+// last sample we used to integrate the filter. 0 means "not yet seeded after
+// calibration".
+uint64_t g_last_ts_ms[FINGER_COUNT] = {0, 0};
+
+// Tunables, populated from ROS parameters in main().
+struct AhrsConfig {
+    float beta = 0.041f;
+    float accel_gate_lo = 0.85f;
+    float accel_gate_hi = 1.15f;
+    float bias_learn_rate = 0.0005f;     // EMA step toward residual gyro when still
+    float still_gyro_eps_deg_s = 0.8f;   // |omega| below this counts as still
+    float still_accel_eps_g = 0.05f;     // ||a| - 1g| below this counts as still
+    float dt_clamp_lo = 1e-4f;           // 0.1 ms
+    float dt_clamp_hi = 0.1f;            // 100 ms
+};
+AhrsConfig g_ahrs_cfg;
 
 enum UsbPacketSpecial
 {
@@ -249,6 +270,27 @@ int main(int argc, char **argv)
     g_node = std::make_shared<rclcpp::Node>("poll_data4");
     g_node->declare_parameter<std::string>("device", kDefaultDevice);
 
+    // AHRS tuning parameters — see AhrsConfig for what each one does.
+    g_node->declare_parameter<double>("madgwick.beta", g_ahrs_cfg.beta);
+    g_node->declare_parameter<double>("madgwick.accel_gate_lo", g_ahrs_cfg.accel_gate_lo);
+    g_node->declare_parameter<double>("madgwick.accel_gate_hi", g_ahrs_cfg.accel_gate_hi);
+    g_node->declare_parameter<double>("madgwick.bias_learn_rate", g_ahrs_cfg.bias_learn_rate);
+    g_node->declare_parameter<double>("madgwick.still_gyro_eps_deg_s", g_ahrs_cfg.still_gyro_eps_deg_s);
+    g_node->declare_parameter<double>("madgwick.still_accel_eps_g", g_ahrs_cfg.still_accel_eps_g);
+
+    g_ahrs_cfg.beta = static_cast<float>(g_node->get_parameter("madgwick.beta").as_double());
+    g_ahrs_cfg.accel_gate_lo = static_cast<float>(g_node->get_parameter("madgwick.accel_gate_lo").as_double());
+    g_ahrs_cfg.accel_gate_hi = static_cast<float>(g_node->get_parameter("madgwick.accel_gate_hi").as_double());
+    g_ahrs_cfg.bias_learn_rate = static_cast<float>(g_node->get_parameter("madgwick.bias_learn_rate").as_double());
+    g_ahrs_cfg.still_gyro_eps_deg_s = static_cast<float>(g_node->get_parameter("madgwick.still_gyro_eps_deg_s").as_double());
+    g_ahrs_cfg.still_accel_eps_g = static_cast<float>(g_node->get_parameter("madgwick.still_accel_eps_g").as_double());
+
+    for (int f = 0; f < FINGER_COUNT; ++f)
+    {
+        g_filter[f].setBeta(g_ahrs_cfg.beta);
+        g_filter[f].setAccelGate(g_ahrs_cfg.accel_gate_lo, g_ahrs_cfg.accel_gate_hi);
+    }
+
     g_service = g_node->create_service<srv::TactileSensors>(
         "tactile_sensors_service", &TactileSensorServiceCallback);
 
@@ -259,7 +301,7 @@ int main(int argc, char **argv)
     g_accel_pub = g_node->create_publisher<msg::Accelerometer>("TactileSensor/Accelerometer", sensor_qos);
     g_euler_pub = g_node->create_publisher<msg::EulerAngle>("TactileSensor/EulerAngle", orientation_qos);
     g_gyro_pub = g_node->create_publisher<msg::Gyroscope>("TactileSensor/Gyroscope", sensor_qos);
-    // g_quat_pub = g_node->create_publisher<msg::Quaternion>("TactileSensor/Quaternion", orientation_qos);  // disabled pending validation
+    g_quat_pub = g_node->create_publisher<msg::Quaternion>("TactileSensor/Quaternion", orientation_qos);
     g_timestamp_pub = g_node->create_publisher<msg::Timestamp>("TactileSensor/Timestamp", sensor_qos);
 
     std::string device = g_node->get_parameter("device").as_string();
@@ -302,7 +344,7 @@ int main(int argc, char **argv)
 
     Fingers fingers = {0};
     msg::Sensor sensors_data;
-    // msg::Quaternion quaternions;  // disabled pending validation
+    msg::Quaternion quaternions;
     UsbPacket send{}, recv{};
     unsigned int recvSoFar = 0;
     std::vector<char> receiveBuffer(4096);
@@ -388,6 +430,7 @@ int main(int argc, char **argv)
 
                     if (BIASCalculationIterator > BIASCalculationIterations)
                     {
+                        // Apply bias correction. ax/ay/az in g, gx/gy/gz in deg/s.
                         ax1 = fingers.finger[0].accelerometer[0] * aRes - ax1_bias;
                         ay1 = fingers.finger[0].accelerometer[1] * aRes - ay1_bias;
                         az1 = fingers.finger[0].accelerometer[2] * aRes - az1_bias;
@@ -401,64 +444,80 @@ int main(int argc, char **argv)
                         gy2 = fingers.finger[1].gyroscope[1] * gRes - gy2_bias;
                         gz2 = fingers.finger[1].gyroscope[2] * gRes - gz2_bias;
 
-                        // Madgwick IMU update: gyro in rad/s, accel in g (normalised internally)
                         constexpr float deg_to_rad = static_cast<float>(M_PI / 180.0f);
-                        MadgwickAHRSupdateIMU(gx1 * deg_to_rad, gy1 * deg_to_rad, gz1 * deg_to_rad,
-                                              ax1, ay1, az1);
-                        MadgwickAHRSupdateIMU2(gx2 * deg_to_rad, gy2 * deg_to_rad, gz2 * deg_to_rad,
-                                               ax2, ay2, az2);
 
-                        const float q0_local = q0;
-                        const float q1_local = q1;
-                        const float q2_local = q2;
-                        const float q3_local = q3;
-                        const float q0new_local = q0new;
-                        const float q1new_local = q1new;
-                        const float q2new_local = q2new;
-                        const float q3new_local = q3new;
+                        const float ax_per_finger[FINGER_COUNT] = {ax1, ax2};
+                        const float ay_per_finger[FINGER_COUNT] = {ay1, ay2};
+                        const float az_per_finger[FINGER_COUNT] = {az1, az2};
+                        const float gx_per_finger[FINGER_COUNT] = {gx1, gx2};
+                        const float gy_per_finger[FINGER_COUNT] = {gy1, gy2};
+                        const float gz_per_finger[FINGER_COUNT] = {gz1, gz2};
+                        float *const gx_bias_per_finger[FINGER_COUNT] = {&gx1_bias, &gx2_bias};
+                        float *const gy_bias_per_finger[FINGER_COUNT] = {&gy1_bias, &gy2_bias};
+                        float *const gz_bias_per_finger[FINGER_COUNT] = {&gz1_bias, &gz2_bias};
 
-                        const float roll1 = atan2f(2.0f * (q0_local * q1_local + q2_local * q3_local),
-                                                   q0_local * q0_local - q1_local * q1_local -
-                                                     q2_local * q2_local + q3_local * q3_local) *
-                                            180.0f / static_cast<float>(M_PI);
-                        const float pitch1 =
-                          -asinf(2.0f * (q1_local * q3_local - q0_local * q2_local)) * 180.0f /
-                          static_cast<float>(M_PI);
-                        const float yaw1 = atan2f(2.0f * (q1_local * q2_local + q0_local * q3_local),
-                                                  q0_local * q0_local + q1_local * q1_local -
-                                                    q2_local * q2_local - q3_local * q3_local) *
-                                           180.0f / static_cast<float>(M_PI);
+                        for (int f = 0; f < FINGER_COUNT; ++f)
+                        {
+                            const float ax = ax_per_finger[f];
+                            const float ay = ay_per_finger[f];
+                            const float az = az_per_finger[f];
+                            const float gx = gx_per_finger[f];
+                            const float gy = gy_per_finger[f];
+                            const float gz = gz_per_finger[f];
 
-                        const float roll2 =
-                          atan2f(2.0f * (q0new_local * q1new_local + q2new_local * q3new_local),
-                                 q0new_local * q0new_local - q1new_local * q1new_local -
-                                   q2new_local * q2new_local + q3new_local * q3new_local) *
-                          180.0f / static_cast<float>(M_PI);
-                        const float pitch2 =
-                          -asinf(2.0f * (q1new_local * q3new_local - q0new_local * q2new_local)) *
-                          180.0f / static_cast<float>(M_PI);
-                        const float yaw2 =
-                          atan2f(2.0f * (q1new_local * q2new_local + q0new_local * q3new_local),
-                                 q0new_local * q0new_local + q1new_local * q1new_local -
-                                   q2new_local * q2new_local - q3new_local * q3new_local) *
-                          180.0f / static_cast<float>(M_PI);
+                            // Measured dt from MCU per-finger timestamp (ms).
+                            const uint64_t ts = fingers.finger[f].timestamp;
+                            float dt = 0.0f;
+                            if (g_last_ts_ms[f] != 0 && ts > g_last_ts_ms[f])
+                            {
+                                dt = static_cast<float>(ts - g_last_ts_ms[f]) * 1e-3f;
+                                if (dt < g_ahrs_cfg.dt_clamp_lo) dt = g_ahrs_cfg.dt_clamp_lo;
+                                if (dt > g_ahrs_cfg.dt_clamp_hi) dt = g_ahrs_cfg.dt_clamp_hi;
+                            }
+                            g_last_ts_ms[f] = ts;
 
-                        sensors_data.eulerangle.data[0].values[0] = roll1;
-                        sensors_data.eulerangle.data[0].values[1] = pitch1;
-                        sensors_data.eulerangle.data[0].values[2] = yaw1;
-                        sensors_data.eulerangle.data[1].values[0] = roll2;
-                        sensors_data.eulerangle.data[1].values[1] = pitch2;
-                        sensors_data.eulerangle.data[1].values[2] = yaw2;
+                            if (dt > 0.0f)
+                            {
+                                g_filter[f].updateIMU(gx * deg_to_rad, gy * deg_to_rad, gz * deg_to_rad,
+                                                      ax, ay, az, dt);
+                            }
 
-                        // Quaternion topic disabled pending validation
-                        // quaternions.data[0].values[0] = q0_local;
-                        // quaternions.data[0].values[1] = q1_local;
-                        // quaternions.data[0].values[2] = q2_local;
-                        // quaternions.data[0].values[3] = q3_local;
-                        // quaternions.data[1].values[0] = q0new_local;
-                        // quaternions.data[1].values[1] = q1new_local;
-                        // quaternions.data[1].values[2] = q2new_local;
-                        // quaternions.data[1].values[3] = q3new_local;
+                            // Online gyro-bias trim when stationary. The residual gx/gy/gz
+                            // (post-bias-subtraction) should be ~0 if the sensor really is
+                            // still and the bias is still right; if it's not, slowly drift
+                            // the stored bias toward the current reading.
+                            const float gyroMag = std::sqrt(gx * gx + gy * gy + gz * gz);
+                            const float accelNorm = std::sqrt(ax * ax + ay * ay + az * az);
+                            const bool still =
+                                (gyroMag < g_ahrs_cfg.still_gyro_eps_deg_s) &&
+                                (std::fabs(accelNorm - 1.0f) < g_ahrs_cfg.still_accel_eps_g);
+                            if (still)
+                            {
+                                const float alpha = g_ahrs_cfg.bias_learn_rate;
+                                *gx_bias_per_finger[f] += alpha * gx;
+                                *gy_bias_per_finger[f] += alpha * gy;
+                                *gz_bias_per_finger[f] += alpha * gz;
+                            }
+
+                            // Absolute filter quaternion sources both topics.
+                            // Published Euler is bounded to ±180° (ZYX Tait-Bryan) and will
+                            // wrap discretely at the boundary; consumers that need continuous
+                            // angles should subscribe to TactileSensor/Quaternion and decode
+                            // it themselves.
+                            float qRaw[4];
+                            g_filter[f].getQuaternion(qRaw[0], qRaw[1], qRaw[2], qRaw[3]);
+                            quaternions.data[f].values[0] = qRaw[0];
+                            quaternions.data[f].values[1] = qRaw[1];
+                            quaternions.data[f].values[2] = qRaw[2];
+                            quaternions.data[f].values[3] = qRaw[3];
+
+                            float roll, pitch, yaw;
+                            quatToEulerDeg(qRaw, roll, pitch, yaw);
+
+                            sensors_data.eulerangle.data[f].values[0] = roll;
+                            sensors_data.eulerangle.data[f].values[1] = pitch;
+                            sensors_data.eulerangle.data[f].values[2] = yaw;
+                        }
                     }
                     else if (BIASCalculationIterator == BIASCalculationIterations)
                     {
@@ -474,22 +533,19 @@ int main(int argc, char **argv)
                         ax2_bias /= BIASCalculationIterations;
                         ay2_bias /= BIASCalculationIterations;
                         az2_bias /= BIASCalculationIterations;
-                        norm_bias1 = sqrtf(pow(ax1_bias, 2) + pow(ay1_bias, 2) + pow(az1_bias, 2)) - 1;
-                        norm_bias2 = sqrtf(pow(ax2_bias, 2) + pow(ay2_bias, 2) + pow(az2_bias, 2)) - 1;
-                        float denom1 = ax1_bias + ay1_bias + az1_bias;
-                        float denom2 = ax2_bias + ay2_bias + az2_bias;
-                        if (std::fabs(denom1) > 1e-6f)
-                        {
-                            ax1_bias *= norm_bias1 / denom1;
-                            ay1_bias *= norm_bias1 / denom1;
-                            az1_bias *= norm_bias1 / denom1;
-                        }
-                        if (std::fabs(denom2) > 1e-6f)
-                        {
-                            ax2_bias *= norm_bias2 / denom2;
-                            ay2_bias *= norm_bias2 / denom2;
-                            az2_bias *= norm_bias2 / denom2;
-                        }
+
+                        // The calibration-time accel mean *is* gravity expressed in the
+                        // body frame at rest — it's the signal, not a bias to subtract.
+                        // Seed each filter's quaternion from it, then null out the accel
+                        // bias so the runtime path stops subtracting a phantom offset.
+                        g_filter[0].initFromAccel(ax1_bias, ay1_bias, az1_bias);
+                        g_filter[1].initFromAccel(ax2_bias, ay2_bias, az2_bias);
+                        ax1_bias = ay1_bias = az1_bias = 0.0f;
+                        ax2_bias = ay2_bias = az2_bias = 0.0f;
+
+                        g_last_ts_ms[0] = 0;
+                        g_last_ts_ms[1] = 0;
+
                         ++BIASCalculationIterator;
                     }
                     else if (BIASCalculationIterator < BIASCalculationIterations)
@@ -520,7 +576,7 @@ int main(int argc, char **argv)
                         if (BIASCalculationIterator > BIASCalculationIterations)
                         {
                             g_euler_pub->publish(sensors_data.eulerangle);
-                            // g_quat_pub->publish(quaternions);  // disabled pending validation
+                            g_quat_pub->publish(quaternions);
                         }
                     }
 
