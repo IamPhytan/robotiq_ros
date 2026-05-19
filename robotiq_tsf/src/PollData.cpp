@@ -22,13 +22,11 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 //                  "static" data, "dynamic" data or "dynamic" data along with the "imu"
 //                  data. By default, this node will extract static data.
 //
-//Comments:     1) Magnetometers are currently unsupported, their values are thus set to
-//              0 by default.
-//              2) The First time one queries the imu(s), please be aware that
+//Comments:     1) The First time one queries the imu(s), please be aware that
 //              "BIASCalculationIterations" milliseconds of waiting time will be
 //              required. "BIASCalculationIterations" is a global variable defined just
 //              below.
-//              3) During the biases calculations, it is mandatory that the imus remain
+//              2) During the biases calculations, it is mandatory that the imus remain
 //              still, i.e.: the sensors sould not be moving / vibrating at all.
 //
 //
@@ -76,8 +74,7 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 #include "robotiq_tsf/msg/dynamic.hpp"
 #include "robotiq_tsf/msg/euler_angle.hpp"
 #include "robotiq_tsf/msg/gyroscope.hpp"
-#include "robotiq_tsf/msg/magnetometer.hpp"
-#include "robotiq_tsf/msg/quaternion.hpp"
+// #include "robotiq_tsf/msg/quaternion.hpp"  // Quaternion topic disabled pending validation
 #include "robotiq_tsf/msg/sensor.hpp"
 #include "robotiq_tsf/msg/static_data.hpp"
 #include "robotiq_tsf/msg/timestamp.hpp"
@@ -117,16 +114,15 @@ rclcpp::Publisher<msg::StaticData>::SharedPtr g_static_pub;
 rclcpp::Publisher<msg::Dynamic>::SharedPtr g_dynamic_pub;
 rclcpp::Publisher<msg::Accelerometer>::SharedPtr g_accel_pub;
 rclcpp::Publisher<msg::Gyroscope>::SharedPtr g_gyro_pub;
-rclcpp::Publisher<msg::Magnetometer>::SharedPtr g_mag_pub;
 rclcpp::Publisher<msg::EulerAngle>::SharedPtr g_euler_pub;
-rclcpp::Publisher<msg::Quaternion>::SharedPtr g_quat_pub;
+// rclcpp::Publisher<msg::Quaternion>::SharedPtr g_quat_pub;  // disabled pending validation
 rclcpp::Publisher<msg::Timestamp>::SharedPtr g_timestamp_pub;
 rclcpp::Service<srv::TactileSensors>::SharedPtr g_service;
 
 #define READ_DATA_PERIOD_MS 1
 #define FINGER_COUNT 2
-#define FINGER_STATIC_TACTILE_ROW 4
-#define FINGER_STATIC_TACTILE_COL 7
+#define FINGER_STATIC_TACTILE_ROW 7
+#define FINGER_STATIC_TACTILE_COL 4
 #define FINGER_STATIC_TACTILE_COUNT (FINGER_STATIC_TACTILE_ROW * FINGER_STATIC_TACTILE_COL)
 #define FINGER_DYNAMIC_TACTILE_COUNT 1
 
@@ -145,14 +141,19 @@ float gx1_bias=0,gy1_bias=0,gz1_bias=0,gx2_bias=0,gy2_bias=0,gz2_bias=0;
 
 enum UsbPacketSpecial
 {
-    USB_PACKET_START_BYTE = 0x9A
+    USB_PACKET_START_BYTE = 0x9A,
+    USB_PACKET_HEADER_SIZE = 4,
+    USB_PACKET_MAX_DATA_SIZE = 256,
+    USB_PACKET_MAX_SIZE = USB_PACKET_HEADER_SIZE + USB_PACKET_MAX_DATA_SIZE,
 };
 
 enum UsbCommands
 {
     USB_COMMAND_READ_SENSORS = 0x61,
-    USB_COMMAND_AUTOSEND_SENSORS = 0x58,
-    USB_COMMAND_ENTER_BOOTLOADER = 0xE2
+    USB_COMMAND_AUTOSEND_SYNC_SENSORS = 0x58,
+    USB_COMMAND_AUTOSEND_ASYNC_SENSORS = 0x59,
+    USB_COMMAND_ENTER_BOOTLOADER = 0xE2,
+    USB_COMMAND_GET_VERSION = 0xE3,
 };
 
 // Sensor types occupy the higher 4 bits, the 2 bits lower than that identify finger, and the lower 2 bits is used as an index.
@@ -162,9 +163,8 @@ enum UsbSensorType
     USB_SENSOR_TYPE_DYNAMIC_TACTILE = 0x20,
     USB_SENSOR_TYPE_ACCELEROMETER = 0x30,
     USB_SENSOR_TYPE_GYROSCOPE = 0x40,
-    USB_SENSOR_TYPE_MAGNETOMETER = 0x50,
     USB_SENSOR_TYPE_TEMPERATURE = 0x60,
-    USB_SENSOR_TYPE_TIMESTAMP = 0x70
+    USB_SENSOR_TYPE_TIMESTAMP = 0x70,
 };
 
 struct UsbPacket
@@ -173,18 +173,21 @@ struct UsbPacket
     uint8_t crc8;           // over command, data_length and data
     uint8_t command;        // 4 bits of flag (MSB) and 4 bits of command (LSB)
     uint8_t data_length;
-    uint8_t data[60];
+    uint8_t data[USB_PACKET_MAX_DATA_SIZE];
 };
 
 struct FingerData
 {
+    bool newDataAvailable;
+
     uint16_t staticTactile[FINGER_STATIC_TACTILE_COUNT];
     int16_t dynamicTactile[FINGER_DYNAMIC_TACTILE_COUNT];
     int16_t accelerometer[3];
     int16_t gyroscope[3];
-    int16_t magnetometer[3];
     int16_t temperature;
-    uint16_t timestamp;
+    uint64_t timestamp;
+
+    uint16_t baseline[FINGER_STATIC_TACTILE_COUNT];
 };
 
 struct Fingers
@@ -200,9 +203,11 @@ bool OpenAndConfigurePort(int *USB, char const *TheDevice);
 static void usbSend(int *USB, UsbPacket *packet);
 static uint8_t calcCrc8(uint8_t *data, size_t len);
 static bool usbReadByte(UsbPacket *packet, unsigned int *readSoFar, uint8_t d);
-static bool parseSensors(UsbPacket *packet, Fingers *fingers, msg::Sensor *sensors_data);
+static void parseSensors(UsbPacket *packet, Fingers *fingers);
 static inline uint16_t parseBigEndian2(uint8_t *data);
+static inline uint64_t parseBigEndian8(uint8_t *data);
 static uint8_t extractUint16(uint16_t *to, uint16_t toCount, uint8_t *data, unsigned int size);
+static unsigned int extractUint64(uint64_t *to, unsigned int toCount, uint8_t *data, unsigned int size);
 static std::string trimWhitespace(const std::string &value);
 static bool matchesKnownUsbString(const std::string &value);
 static bool readSysfsEntry(const std::string &path, std::string &value);
@@ -254,8 +259,7 @@ int main(int argc, char **argv)
     g_accel_pub = g_node->create_publisher<msg::Accelerometer>("TactileSensor/Accelerometer", sensor_qos);
     g_euler_pub = g_node->create_publisher<msg::EulerAngle>("TactileSensor/EulerAngle", orientation_qos);
     g_gyro_pub = g_node->create_publisher<msg::Gyroscope>("TactileSensor/Gyroscope", sensor_qos);
-    g_mag_pub = g_node->create_publisher<msg::Magnetometer>("TactileSensor/Magnetometer", sensor_qos);
-    g_quat_pub = g_node->create_publisher<msg::Quaternion>("TactileSensor/Quaternion", orientation_qos);
+    // g_quat_pub = g_node->create_publisher<msg::Quaternion>("TactileSensor/Quaternion", orientation_qos);  // disabled pending validation
     g_timestamp_pub = g_node->create_publisher<msg::Timestamp>("TactileSensor/Timestamp", sensor_qos);
 
     std::string device = g_node->get_parameter("device").as_string();
@@ -298,7 +302,7 @@ int main(int argc, char **argv)
 
     Fingers fingers = {0};
     msg::Sensor sensors_data;
-    msg::Quaternion quaternions;
+    // msg::Quaternion quaternions;  // disabled pending validation
     UsbPacket send{}, recv{};
     unsigned int recvSoFar = 0;
     std::vector<char> receiveBuffer(4096);
@@ -306,7 +310,7 @@ int main(int argc, char **argv)
     const float aRes = 2.0F / 32768.0F;
     const float gRes = 250.0F / 32768.0F;
 
-    send.command = USB_COMMAND_AUTOSEND_SENSORS;
+    send.command = USB_COMMAND_AUTOSEND_SYNC_SENSORS;
     send.data_length = 1;
     send.data[0] = READ_DATA_PERIOD_MS;
     usbSend(&USB, &send);
@@ -332,7 +336,26 @@ int main(int argc, char **argv)
         {
             if (usbReadByte(&recv, &recvSoFar, static_cast<uint8_t>(receiveBuffer[i])))
             {
-                bool newSetOfData = parseSensors(&recv, &fingers, &sensors_data);
+                // The firmware no longer emits a single "end-of-frame" sensor type; instead
+                // each finger advertises whether it received new data in this packet.
+                if (recv.command != USB_COMMAND_AUTOSEND_SYNC_SENSORS &&
+                    recv.command != USB_COMMAND_AUTOSEND_ASYNC_SENSORS &&
+                    recv.command != USB_COMMAND_READ_SENSORS)
+                {
+                    continue;
+                }
+
+                parseSensors(&recv, &fingers);
+
+                bool newSetOfData = false;
+                for (int f = 0; f < FINGER_COUNT; ++f)
+                {
+                    if (fingers.finger[f].newDataAvailable)
+                    {
+                        newSetOfData = true;
+                        break;
+                    }
+                }
 
                 if (newSetOfData)
                 {
@@ -359,13 +382,6 @@ int main(int argc, char **argv)
                     std::memcpy(sensors_data.gyroscope.data[1].values.data(),
                                 fingers.finger[1].gyroscope,
                                 sizeof(fingers.finger[1].gyroscope));
-
-                    std::memcpy(sensors_data.magnetometer.data[0].values.data(),
-                                fingers.finger[0].magnetometer,
-                                sizeof(fingers.finger[0].magnetometer));
-                    std::memcpy(sensors_data.magnetometer.data[1].values.data(),
-                                fingers.finger[1].magnetometer,
-                                sizeof(fingers.finger[1].magnetometer));
 
                     sensors_data.timestamp.values[0] = fingers.finger[0].timestamp;
                     sensors_data.timestamp.values[1] = fingers.finger[1].timestamp;
@@ -434,14 +450,15 @@ int main(int argc, char **argv)
                         sensors_data.eulerangle.data[1].values[1] = pitch2;
                         sensors_data.eulerangle.data[1].values[2] = yaw2;
 
-                        quaternions.data[0].values[0] = q0_local;
-                        quaternions.data[0].values[1] = q1_local;
-                        quaternions.data[0].values[2] = q2_local;
-                        quaternions.data[0].values[3] = q3_local;
-                        quaternions.data[1].values[0] = q0new_local;
-                        quaternions.data[1].values[1] = q1new_local;
-                        quaternions.data[1].values[2] = q2new_local;
-                        quaternions.data[1].values[3] = q3new_local;
+                        // Quaternion topic disabled pending validation
+                        // quaternions.data[0].values[0] = q0_local;
+                        // quaternions.data[0].values[1] = q1_local;
+                        // quaternions.data[0].values[2] = q2_local;
+                        // quaternions.data[0].values[3] = q3_local;
+                        // quaternions.data[1].values[0] = q0new_local;
+                        // quaternions.data[1].values[1] = q1new_local;
+                        // quaternions.data[1].values[2] = q2new_local;
+                        // quaternions.data[1].values[3] = q3new_local;
                     }
                     else if (BIASCalculationIterator == BIASCalculationIterations)
                     {
@@ -503,15 +520,18 @@ int main(int argc, char **argv)
                         if (BIASCalculationIterator > BIASCalculationIterations)
                         {
                             g_euler_pub->publish(sensors_data.eulerangle);
-                            g_quat_pub->publish(quaternions);
+                            // g_quat_pub->publish(quaternions);  // disabled pending validation
                         }
                     }
+
+                    for (int f = 0; f < FINGER_COUNT; ++f)
+                        fingers.finger[f].newDataAvailable = false;
                 }
             }
         }
     }
 
-    send.command = USB_COMMAND_AUTOSEND_SENSORS;
+    send.command = USB_COMMAND_AUTOSEND_SYNC_SENSORS;
     send.data_length = 1;
     send.data[0] = 0;
     usbSend(&USB, &send);
@@ -648,12 +668,12 @@ static bool usbReadByte(UsbPacket *packet, unsigned int *readSoFar, uint8_t d)
         return false;
 
     // Buffer the byte (making sure not to overflow the packet)
-    if (*readSoFar < 64)
+    if (*readSoFar < USB_PACKET_MAX_SIZE)
         p[*readSoFar] = d;
     ++*readSoFar;
 
     // If length is read, stop when done
-    if (*readSoFar > 3 && *readSoFar >= (unsigned)packet->data_length + 4)
+    if (*readSoFar > 3 && *readSoFar >= (unsigned)packet->data_length + USB_PACKET_HEADER_SIZE)
     {
         *readSoFar = 0;
 
@@ -662,11 +682,11 @@ static bool usbReadByte(UsbPacket *packet, unsigned int *readSoFar, uint8_t d)
             return true;
 
         // If CRC is not ok, find the next start byte and shift the packet back in hopes of getting back in sync
-        for (unsigned int i = 1; i < (unsigned)packet->data_length + 4; ++i)
+        for (unsigned int i = 1; i < (unsigned)packet->data_length + USB_PACKET_HEADER_SIZE; ++i)
             if (p[i] == USB_PACKET_START_BYTE)
             {
-                memmove(p, p + i, packet->data_length + 4 - i);
-                *readSoFar = packet->data_length + 4 - i;
+                memmove(p, p + i, packet->data_length + USB_PACKET_HEADER_SIZE - i);
+                *readSoFar = packet->data_length + USB_PACKET_HEADER_SIZE - i;
                 break;
             }
     }
@@ -675,15 +695,16 @@ static bool usbReadByte(UsbPacket *packet, unsigned int *readSoFar, uint8_t d)
 }
 
 
-static bool parseSensors(UsbPacket *packet, Fingers *fingers, msg::Sensor *sensors_data)
+static void parseSensors(UsbPacket *packet, Fingers *fingers)
 {
-    (void)sensors_data;
-    bool sawDynamic = false;
     for (unsigned int i = 0; i < packet->data_length;)
     {
         uint8_t sensorType = packet->data[i] & 0xF0;
         uint8_t f= packet->data[i] >> 2 & 0x03;
         ++i;
+
+        if (f >= FINGER_COUNT)
+            continue;
 
         uint8_t *sensorData = packet->data + i;
         unsigned int sensorDataBytes = packet->data_length - i;
@@ -692,42 +713,47 @@ static bool parseSensors(UsbPacket *packet, Fingers *fingers, msg::Sensor *senso
         {
         case USB_SENSOR_TYPE_DYNAMIC_TACTILE:
             i += extractUint16((uint16_t *)fingers->finger[f].dynamicTactile, FINGER_DYNAMIC_TACTILE_COUNT, sensorData, sensorDataBytes);
-            sawDynamic = true;
+            fingers->finger[f].newDataAvailable = true;
             break;
         case USB_SENSOR_TYPE_STATIC_TACTILE:
             i += extractUint16(fingers->finger[f].staticTactile, FINGER_STATIC_TACTILE_COUNT, sensorData, sensorDataBytes);
+            fingers->finger[f].newDataAvailable = true;
             break;
         case USB_SENSOR_TYPE_ACCELEROMETER:
             i += extractUint16((uint16_t *)fingers->finger[f].accelerometer, 3, sensorData, sensorDataBytes);
+            fingers->finger[f].newDataAvailable = true;
             break;
         case USB_SENSOR_TYPE_GYROSCOPE:
             i += extractUint16((uint16_t *)fingers->finger[f].gyroscope, 3, sensorData, sensorDataBytes);
-            break;
-        case USB_SENSOR_TYPE_MAGNETOMETER:
-            i += extractUint16((uint16_t *)fingers->finger[f].magnetometer, 3, sensorData, sensorDataBytes);
+            fingers->finger[f].newDataAvailable = true;
             break;
         case USB_SENSOR_TYPE_TEMPERATURE:
             i += extractUint16((uint16_t *)&fingers->finger[f].temperature, 1, sensorData, sensorDataBytes);
+            fingers->finger[f].newDataAvailable = true;
             break;
         case USB_SENSOR_TYPE_TIMESTAMP:
-            i += extractUint16(&fingers->finger[f].timestamp, 1, sensorData, sensorDataBytes);
+            i += extractUint64(&fingers->finger[f].timestamp, 1, sensorData, sensorDataBytes);
+            fingers->finger[f].newDataAvailable = true;
             break;
         default:
-            // Unknown sensor, we can't continue parsing anything from here on
-            return sawDynamic;
+            // Unknown sensor type — skip the marker byte and keep parsing so
+            // forward-compatible additions don't kill the rest of the packet.
+            break;
         }
     }
-
-    /*
-     * Return true every time dynamic data is read.  This is used to identify when a whole set of data has
-     * arrived and needs to be processed.
-     */
-    return sawDynamic;
 }
 
 static inline uint16_t parseBigEndian2(uint8_t *data)
 {
     return (uint16_t)data[0] << 8 | data[1];
+}
+
+static inline uint64_t parseBigEndian8(uint8_t *data)
+{
+    return  (uint64_t)data[0] << 56 | (uint64_t)data[1] << 48
+          | (uint64_t)data[2] << 40 | (uint64_t)data[3] << 32
+          | (uint64_t)data[4] << 24 | (uint64_t)data[5] << 16
+          | (uint64_t)data[6] << 8  | (uint64_t)data[7];
 }
 
 static uint8_t extractUint16(uint16_t *to, uint16_t toCount, uint8_t *data, unsigned int size)
@@ -740,6 +766,16 @@ static uint8_t extractUint16(uint16_t *to, uint16_t toCount, uint8_t *data, unsi
 
     // Return number of bytes read
     return cur * 2;
+}
+
+static unsigned int extractUint64(uint64_t *to, unsigned int toCount, uint8_t *data, unsigned int size)
+{
+    unsigned int cur;
+
+    for (cur = 0; 8 * cur + 7 < size && cur < toCount; ++cur)
+        to[cur] = parseBigEndian8(&data[8 * cur]);
+
+    return cur * 8;
 }
 
 static void forceReconnectSensor(int *USB)
@@ -776,7 +812,7 @@ static void forceReconnectSensor(int *USB)
 #endif
 
     UsbPacket stop_packet{};
-    stop_packet.command = USB_COMMAND_AUTOSEND_SENSORS;
+    stop_packet.command = USB_COMMAND_AUTOSEND_SYNC_SENSORS;
     stop_packet.data_length = 1;
     stop_packet.data[0] = 0;
     usbSend(USB, &stop_packet);
