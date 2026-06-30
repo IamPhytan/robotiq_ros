@@ -5,6 +5,7 @@ ROS packages for Robotiq grippers and sensors.
 | Package | Description | ROS Version |
 |---|---|---|
 | [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Jazzy ([main](https://github.com/robotiq/ROS_Packages/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ROS_Packages/tree/noetic)) |
+| [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — forked from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause) | ROS 2 Jazzy |
 
 ## Legacy
 
@@ -18,7 +19,6 @@ Also check out these community-maintained ROS drivers for Robotiq products.
 
 | Repository | Description | ROS Version |
 |---|---|---|
-| [ros2_robotiq_gripper](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 driver for Robotiq grippers | ROS 2 Humble / Iron / Rolling |
 | [ros2_epick_gripper](https://github.com/PickNikRobotics/ros2_epick_gripper) | ROS 2 driver for the EPick vacuum gripper | ROS 2 Humble |
 | [rq_fts_ros2_driver](https://github.com/panagelak/rq_fts_ros2_driver) | ROS 2 driver for the Robotiq force-torque sensor | ROS 2 Humble |
 | [ros2_RobotiqGripper_UR](https://github.com/IFRA-Cranfield/ros2_RobotiqGripper_UR) | ROS 2 driver for Robotiq grippers on UR robots | ROS 2 Humble |
@@ -47,7 +47,7 @@ The node publishes on the following topics:
 
 ## Docker
 
-The `docker/` folder provides scripts to build and run the TSF-85 driver inside a Docker container. Clone with submodules to pull in the required utilities:
+The `docker/` folder provides scripts to build and run the TSF-85 and 2F grippers inside a container. Clone with submodules to pull in the required utilities:
 
 ```bash
 git clone --recurse-submodules https://github.com/robotiq/ros.git
@@ -61,5 +61,9 @@ git submodule update --init
 
 | Script | Description |
 |---|---|
-| `build_launch_docker_ros2.sh` | Builds the Docker image and launches a container with sensor devices mapped in |
+| `run.sh` | Builds a single ROS 2 Jazzy image with the **whole workspace** (sensor + grippers) and launches a shell with that product's devices mapped: `./run.sh [gripper\|sensor\|both]`. |
 | `sensor_install.sh` | Sets up udev rules and permissions for bare-metal (non-Docker) use |
+
+> `Dockerfile_TSF85_ROS2` and `build_launch_docker_ros2.sh` are kept as deprecation shims pointing to `Dockerfile` / `run.sh sensor`.
+
+The single-image build (`Dockerfile`) is distro-flexible — `--build-arg ROS_DISTRO=…` (default `jazzy`).
