@@ -45,6 +45,23 @@ The node publishes on the following topics:
 
 > Note: `EulerAngle` and `Quaternion` are only published after the IMU bias calibration period completes at startup.
 
+## Grippers
+
+ROS 2 `ros2_control` driver for Robotiq grippers (2F-85 / 2F-140, Hand-E), under [`grippers/`](grippers/):
+
+| Package | Description |
+|---|---|
+| `robotiq_driver` | `ros2_control` hardware interface (Modbus RTU over serial) |
+| `robotiq_controllers` | Gripper command / activation controllers |
+| `robotiq_description` | URDF/xacro, meshes, RViz + bringup launch |
+| `robotiq_hardware_tests` | Hardware integration tests |
+
+Bring up a gripper:
+
+```bash
+ros2 launch robotiq_description robotiq_control.launch.py
+```
+
 ## Docker
 
 The `docker/` folder provides scripts to build and run the TSF-85 and 2F grippers inside a container. Clone with submodules to pull in the required utilities:

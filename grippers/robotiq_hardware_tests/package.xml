@@ -4,8 +4,10 @@
   <name>robotiq_hardware_tests</name>
   <version>0.0.1</version>
   <description>ROS2 driver for the Robotiq gripper.</description>
-  <maintainer email="giovanni.remigi@picknik.ai">Giovanni Remigi</maintainer>
-  <license>BSD</license>
+  <maintainer email="noreply@robotiq.com">Robotiq</maintainer>
+  <license>BSD-3-Clause</license>
+  <url type="repository">https://github.com/robotiq/ros</url>
+  <url type="bugtracker">https://github.com/robotiq/ros/issues</url>
   <author>Giovanni Remigi</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
