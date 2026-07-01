@@ -76,6 +76,13 @@ def generate_launch_description():
             description="Port for communicating with Robotiq hardware",
         )
     )
+    args.append(
+        launch.actions.DeclareLaunchArgument(
+            name="use_fake_hardware",
+            default_value="false",
+            description="Use ros2_control mock (fake) hardware instead of a real gripper",
+        )
+    )
 
     robot_description_content = Command(
         [
@@ -83,7 +90,8 @@ def generate_launch_description():
             " ",
             LaunchConfiguration("model"),
             " ",
-            "use_fake_hardware:=false",
+            "use_fake_hardware:=",
+            LaunchConfiguration("use_fake_hardware"),
             " ",
             "com_port:=",
             LaunchConfiguration("com_port"),
