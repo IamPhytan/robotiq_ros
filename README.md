@@ -5,6 +5,7 @@ ROS packages for Robotiq grippers and sensors.
 | Package | Description | ROS Version |
 |---|---|---|
 | [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Jazzy ([main](https://github.com/robotiq/ROS_Packages/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ROS_Packages/tree/noetic)) |
+| [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — vendored from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 Jazzy |
 
 ## Legacy
 
@@ -18,7 +19,6 @@ Also check out these community-maintained ROS drivers for Robotiq products.
 
 | Repository | Description | ROS Version |
 |---|---|---|
-| [ros2_robotiq_gripper](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 driver for Robotiq grippers | ROS 2 Humble / Iron / Rolling |
 | [ros2_epick_gripper](https://github.com/PickNikRobotics/ros2_epick_gripper) | ROS 2 driver for the EPick vacuum gripper | ROS 2 Humble |
 | [rq_fts_ros2_driver](https://github.com/panagelak/rq_fts_ros2_driver) | ROS 2 driver for the Robotiq force-torque sensor | ROS 2 Humble |
 | [ros2_RobotiqGripper_UR](https://github.com/IFRA-Cranfield/ros2_RobotiqGripper_UR) | ROS 2 driver for Robotiq grippers on UR robots | ROS 2 Humble |
@@ -45,9 +45,66 @@ The node publishes on the following topics:
 
 > Note: `EulerAngle` and `Quaternion` are only published after the IMU bias calibration period completes at startup.
 
+## Grippers
+
+ROS 2 `ros2_control` driver for Robotiq grippers (2F-85 / 2F-140, Hand-E), under [`grippers/`](grippers/).
+
+`grippers/` is a vendored copy of PickNik Robotics' [`ros2_robotiq_gripper`](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause), imported via `git subtree` at upstream commit `3b6cf8f` with its history preserved, and maintained here in-tree. Upstream copyright and `<author>` tags are retained.
+
+| Package | Description |
+|---|---|
+| `robotiq_driver` | `ros2_control` hardware interface (Modbus RTU over serial) |
+| `robotiq_controllers` | Gripper command / activation controllers |
+| `robotiq_description` | URDF/xacro, meshes, RViz + bringup launch |
+| `robotiq_hardware_tests` | Hardware integration tests |
+
+Bring up a gripper:
+
+```bash
+ros2 launch robotiq_description robotiq_control.launch.py                    # real hw, com_port:=/dev/ttyUSB0
+ros2 launch robotiq_description robotiq_control.launch.py use_fake_hardware:=true   # ros2_control mock
+ros2 launch robotiq_description robotiq_control.launch.py launch_rviz:=true         # + RViz visualization
+```
+
+This activates `joint_state_broadcaster`, `robotiq_gripper_controller`, and `robotiq_activation_controller`.
+
+### Commanding the gripper
+
+`robotiq_gripper_controller` is a `parallel_gripper_action_controller/GripperActionController`, so its action `/robotiq_gripper_controller/gripper_cmd` takes a `control_msgs/action/ParallelGripperCommand` — a `sensor_msgs/JointState` goal (not the older `GripperCommand`).
+
+The bringup above holds its terminal, so open a **second terminal**, exec into the running container, then send a goal:
+
+```bash
+# host: open a second shell into the running container
+docker exec -it robotiq_ros2 bash
+
+# inside the container:
+ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
+  control_msgs/action/ParallelGripperCommand \
+  "{command: {name: ['robotiq_85_left_knuckle_joint'], position: [0.4], effort: [40.0]}}"
+```
+
+`position` is the joint angle in radians (≈ `0.0` open → ~`0.8` closed on a 2F-85); `effort` and `velocity` are optional max limits, mapped to the controller's `set_gripper_max_effort` / `set_gripper_max_velocity` interfaces.
+
+### RViz
+
+Pass `launch_rviz:=true` to open RViz with the gripper model (default config `robotiq_description/rviz/view_urdf.rviz`); the joints update live from `joint_state_broadcaster`. Override with `rvizconfig:=/path/to/your.rviz`. Args combine — e.g. `use_fake_hardware:=true launch_rviz:=true` to visualize without hardware. Running via `docker/run.sh` already forwards X11, so the RViz window displays from inside the container (if it can't connect to the display, run `xhost +local:root` on the host once).
+
+#### Visualizing the model without hardware
+
+To inspect the model in RViz with no gripper attached (no `ros2_control`), use the visualization-only launch — `robot_state_publisher`, RViz, and a `joint_state_publisher_gui` slider:
+
+```bash
+ros2 launch robotiq_description view_gripper.launch.py
+```
+
+Drag the `robotiq_85_left_knuckle_joint` slider; the five finger joints follow it via URDF `mimic` (≈ `0.0` open → ~`0.8` closed).
+
+> Known limitation: the `gripper_cmd` action controller does not drive the model under `use_fake_hardware:=true` (the mock does not expose the gripper's effort/velocity command interfaces), so goal-based commanding in simulation is not yet available. Use the slider above for hardware-free visualization.
+
 ## Docker
 
-The `docker/` folder provides scripts to build and run the TSF-85 driver inside a Docker container. Clone with submodules to pull in the required utilities:
+The `docker/` folder provides scripts to build and run the TSF-85 and 2F grippers inside a container. Clone with submodules to pull in the required utilities:
 
 ```bash
 git clone --recurse-submodules https://github.com/robotiq/ros.git
@@ -61,5 +118,9 @@ git submodule update --init
 
 | Script | Description |
 |---|---|
-| `build_launch_docker_ros2.sh` | Builds the Docker image and launches a container with sensor devices mapped in |
+| `run.sh` | Builds a single ROS 2 Jazzy image with the **whole workspace** (sensor + grippers) and launches a shell with that product's devices mapped: `./run.sh [gripper\|sensor\|both]`. |
 | `sensor_install.sh` | Sets up udev rules and permissions for bare-metal (non-Docker) use |
+
+> `Dockerfile_TSF85_ROS2` and `build_launch_docker_ros2.sh` are kept as deprecation shims pointing to `Dockerfile` / `run.sh sensor`.
+
+The single-image build (`Dockerfile`) is distro-flexible — `--build-arg ROS_DISTRO=…` (default `jazzy`).
