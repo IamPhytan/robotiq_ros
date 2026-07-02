@@ -102,6 +102,26 @@ Drag the `robotiq_85_left_knuckle_joint` slider; the five finger joints follow i
 
 > Known limitation: the `gripper_cmd` action controller does not drive the model under `use_fake_hardware:=true` (the mock does not expose the gripper's effort/velocity command interfaces), so goal-based commanding in simulation is not yet available. Use the slider above for hardware-free visualization.
 
+## Testing
+
+Unit tests live in each package's `test/` directory and run without hardware. Build and run all tests from the repository root:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+vcs import < grippers/ros2_robotiq_gripper.rolling.repos  # one-time: pulls the external `serial` dep
+colcon build
+colcon test
+colcon test-result --verbose
+```
+
+To scope to a single package, pass `--packages-select <package>` to `colcon build` and `colcon test`.
+
+Test executables land under `build/<package>/`, mirroring the package's test-directory layout; run one directly for gtest options such as `--gtest_filter`:
+
+```bash
+./build/<package>/test/<test_executable> --gtest_filter='<TestSuite>.*'
+```
+
 ## Docker
 
 The `docker/` folder provides scripts to build and run the TSF-85 and 2F grippers inside a container. Clone with submodules to pull in the required utilities:

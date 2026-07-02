@@ -142,4 +142,8 @@ ament_export_dependencies(
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME}_algorithms)
 
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()
+
 ament_package()
