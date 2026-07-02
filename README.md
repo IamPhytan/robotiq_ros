@@ -122,6 +122,8 @@ Test executables land under `build/<package>/`, mirroring the package's test-dir
 ./build/<package>/test/<test_executable> --gtest_filter='<TestSuite>.*'
 ```
 
+CI builds the packages and runs their unit tests on pull requests ([`ci-ros-build-test.yml`](.github/workflows/ci-ros-build-test.yml)).
+
 ## Docker
 
 The `docker/` folder provides scripts to build and run the TSF-85 and 2F grippers inside a container. Clone with submodules to pull in the required utilities:
