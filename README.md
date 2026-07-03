@@ -4,7 +4,7 @@ ROS packages for Robotiq grippers and sensors.
 
 | Package | Description | ROS Version |
 |---|---|---|
-| [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Jazzy ([main](https://github.com/robotiq/ROS_Packages/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ROS_Packages/tree/noetic)) |
+| [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Jazzy ([main](https://github.com/robotiq/ros/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ros/tree/noetic)) |
 | [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — vendored from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 Jazzy |
 
 ## Legacy
