@@ -1,3 +1,9 @@
 build/
 install/
 log/
+serial/
+
+# IDE / per-machine cmake config
+.qtcreator/
+CMakeUserPresets.json
+robotiq_tsf/build/

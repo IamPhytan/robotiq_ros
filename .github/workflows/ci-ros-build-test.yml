@@ -1,0 +1,37 @@
+# Build robotiq_tsf and run its unit tests (colcon test) on the CI runner.
+# First build+test workflow in the repo — the algorithm code (MadgwickAHRS)
+# is pure math and needs no sensor hardware.
+# Distro policy: LTS only — matrix is [jazzy] now, add lyrical when it ships
+# (see ros-driver distro-compat policy; distro pairs with its Ubuntu LTS).
+name: ROS Build & Test (robotiq_tsf)
+
+on:
+  pull_request:
+    paths:
+      - "robotiq_tsf/**"
+      - ".github/workflows/ci-ros-build-test.yml"
+  workflow_dispatch:
+
+jobs:
+  build_and_test:
+    name: colcon test (${{ matrix.ros_distro }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: jazzy
+            os: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: ${{ matrix.ros_distro }}
+      - uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          package-name: robotiq_tsf
+          target-ros2-distro: ${{ matrix.ros_distro }}
+          # robotiq_driver's `serial` dep has no rosdep rule — it is imported
+          # from source (vcs) only when the grippers are built. This workflow
+          # only builds robotiq_tsf, so skip the key rather than import it.
+          rosdep-skip-keys: serial
