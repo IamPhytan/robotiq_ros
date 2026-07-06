@@ -45,6 +45,31 @@ The node publishes on the following topics:
 
 > Note: `EulerAngle` and `Quaternion` are only published after the IMU bias calibration period completes at startup.
 
+### Tactile visualization (RViz)
+
+`tactile_viz_node` renders `TactileSensor/StaticData` as per-taxel 3D markers and per-finger 2D heatmap images, with the pad TFs to place them. Two launches:
+
+```bash
+ros2 launch robotiq_tsf tactile_viz.launch.py                 # driver + viz + RViz, standalone
+ros2 launch robotiq_tsf gripper_tactile_viz.launch.py \
+    com_port:=/dev/ttyUSB0                                    # single window: 2F-85 gripper + pads on its fingertips
+```
+
+Common args (see `--show-args` for the full list):
+
+| Arg | Default | Description |
+|---|---|---|
+| `poller` | `poll_data_node` | Driver executable publishing `StaticData` — override to use an alternative poller |
+| `rviz` / `rviz_config` | `true` / packaged config | Toggle RViz / point it at your own config (`tactile_viz.launch.py`) |
+| `use_fake_hardware` | `false` | Gripper `ros2_control` mock (`gripper_tactile_viz.launch.py`) |
+| `tactile_delay` | `8.0` | Seconds to delay the viz start so the baseline is captured after gripper activation (`gripper_tactile_viz.launch.py`) |
+
+The node publishes `visualization_msgs/MarkerArray` on `/tactile/markers` and `sensor_msgs/Image` heatmaps on `/tactile_viz/finger1_heatmap` / `/tactile_viz/finger2_heatmap`. On startup it averages the first `baseline_frames` messages into a per-taxel baseline and subtracts it (re-zero anytime: `ros2 topic pub --once /tactile_viz/zero std_msgs/msg/Empty`); readings below `noise_floor` render quiet. Pad geometry, frames, color scale, and heatmap options are parameters of `tactile_viz_node`.
+
+In the combined launch the pad frames are TF-mounted on the gripper fingertip links, so the heatmaps follow the fingers as the gripper opens and closes.
+
+> Note: depending on the USB enumeration state (it can toggle with a replug), `poll_data_node` can emit corrupted `StaticData` on the TSF-85, rendering as saturated/flashing heatmaps — a driver parsing issue addressed separately by the SDK-backed poller; the visualization itself is unaffected.
+
 ## Grippers
 
 ROS 2 `ros2_control` driver for Robotiq grippers (2F-85 / 2F-140, Hand-E), under [`grippers/`](grippers/).

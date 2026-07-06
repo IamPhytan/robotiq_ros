@@ -121,6 +121,16 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Python RViz visualization node + its launch and config.
+install(PROGRAMS
+  scripts/tactile_viz_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch rviz
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(DIRECTORY include/
   DESTINATION include
 )
