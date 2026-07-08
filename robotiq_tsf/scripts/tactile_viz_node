@@ -95,12 +95,15 @@ class TactileVizNode(Node):
         # Set true only if one pad is physically wired with reversed columns.
         self.declare_parameter('flip_finger_1', False)
         self.declare_parameter('publish_2d_heatmaps', True)
-        self.declare_parameter('heatmap_topic_finger_0', '/tactile_viz/finger1_heatmap')
-        self.declare_parameter('heatmap_topic_finger_1', '/tactile_viz/finger2_heatmap')
+        self.declare_parameter('heatmap_topic_finger_0', '/tactile_viz/finger0_heatmap')
+        self.declare_parameter('heatmap_topic_finger_1', '/tactile_viz/finger1_heatmap')
         self.declare_parameter('heatmap_scale_px', 20)
         self.declare_parameter('heatmap_publish_hz', 30.0)
         self.declare_parameter('heatmap_autoscale', True)
-        self.declare_parameter('heatmap_floor', 50.0)
+        # Extra heatmap-only floor on top of noise_floor (which already zeroes
+        # small residuals for markers AND heatmaps). Leave at 0 unless the
+        # heatmaps specifically need a harsher cutoff than the 3D view.
+        self.declare_parameter('heatmap_floor', 0.0)
         self.declare_parameter('publish_static_tfs', True)
         self.declare_parameter('qos', 'sensor_data')
         # Baseline zeroing: raw StaticData carries a large per-taxel offset, so
@@ -136,6 +139,9 @@ class TactileVizNode(Node):
         self._vmax = float(p('vmax').value)
         if self._vmax <= self._vmin:
             self._vmax = self._vmin + 1.0
+            self.get_logger().warn(
+                f'vmax ({p("vmax").value}) <= vmin ({self._vmin}); '
+                f'using vmax = {self._vmax}')
         self._flip_f1 = bool(p('flip_finger_1').value)
         self._publish_2d_heatmaps = bool(p('publish_2d_heatmaps').value)
         heatmap_topics = [
@@ -300,6 +306,9 @@ class TactileVizNode(Node):
                 m.scale = Vector3(x=self._size, y=self._size, z=self._size)
                 m.color = ColorRGBA(r=rr, g=gg, b=bb, a=1.0)
                 m.lifetime = Duration(sec=0, nanosec=0)
+                # Re-transform every render frame — the pad frames move with
+                # the gripper fingers between marker updates.
+                m.frame_locked = True
                 markers.append(m)
         return markers
 

@@ -64,7 +64,7 @@ Common args (see `--show-args` for the full list):
 | `use_fake_hardware` | `false` | Gripper `ros2_control` mock (`gripper_tactile_viz.launch.py`) |
 | `tactile_delay` | `8.0` | Seconds to delay the viz start so the baseline is captured after gripper activation (`gripper_tactile_viz.launch.py`) |
 
-The node publishes `visualization_msgs/MarkerArray` on `/tactile/markers` and `sensor_msgs/Image` heatmaps on `/tactile_viz/finger1_heatmap` / `/tactile_viz/finger2_heatmap`. On startup it averages the first `baseline_frames` messages into a per-taxel baseline and subtracts it (re-zero anytime: `ros2 topic pub --once /tactile_viz/zero std_msgs/msg/Empty`); readings below `noise_floor` render quiet. Pad geometry, frames, color scale, and heatmap options are parameters of `tactile_viz_node`.
+The node publishes `visualization_msgs/MarkerArray` on `/tactile/markers` and `sensor_msgs/Image` heatmaps on `/tactile_viz/finger0_heatmap` / `/tactile_viz/finger1_heatmap`. On startup it averages the first `baseline_frames` messages into a per-taxel baseline and subtracts it (re-zero anytime: `ros2 topic pub --once /tactile_viz/zero std_msgs/msg/Empty`); readings below `noise_floor` render quiet. Pad geometry, frames, color scale, and heatmap options are parameters of `tactile_viz_node`.
 
 In the combined launch the pad frames are TF-mounted on the gripper fingertip links, so the heatmaps follow the fingers as the gripper opens and closes.
 

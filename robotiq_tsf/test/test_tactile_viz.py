@@ -270,3 +270,55 @@ def test_wrong_taxel_count_is_dropped():
         assert node._marker_pub.msgs == []     # dropped, nothing published
     finally:
         node.destroy_node()
+
+
+def test_publish_static_tfs():
+    class RecordingBroadcaster:
+        def __init__(self):
+            self.transforms = []
+
+        def sendTransform(self, transforms):
+            self.transforms.extend(transforms)
+
+    node = make_node(zero_on_start=False)
+    try:
+        bc = RecordingBroadcaster()
+        node._tf_broadcaster = bc
+        node._publish_static_tfs()
+        assert [t.child_frame_id for t in bc.transforms] == [
+            'tactile_finger_0', 'tactile_finger_1', 'tactile_tip']
+        assert all(t.header.frame_id == 'tactile_world' for t in bc.transforms)
+        f0, f1, tip = bc.transforms
+        assert f0.transform.translation.x == pytest.approx(-0.0425)
+        assert f1.transform.translation.x == pytest.approx(0.0425)
+        assert tip.transform.translation.z == pytest.approx(0.0209)
+        assert f0.transform.rotation.w == pytest.approx(1.0)
+        q = f1.transform.rotation                # finger 1 yawed pi to face finger 0
+        assert (q.w, q.x, q.y, abs(q.z)) == pytest.approx((0.0, 0.0, 0.0, 1.0), abs=1e-9)
+    finally:
+        node.destroy_node()
+
+
+def test_heatmap_pixel_orientation():
+    # Ramp value = r*COLS + c: every pixel unique, pinning the image's
+    # row/column orientation, not just pixel (0,0).
+    ramp = list(range(TAXELS))
+    node = make_node(zero_on_start=False, heatmap_scale_px=1,
+                     heatmap_publish_hz=0.0, heatmap_autoscale=False,
+                     vmin=0.0, vmax=float(TAXELS - 1), noise_floor=0.0)
+    try:
+        node._on_data(make_msg(ramp, ramp))
+        img = node._heatmap_pubs[0].msgs[-1]
+
+        def px(r, c):
+            o = (r*img.width + c)*3
+            return bytes(img.data[o:o + 3])
+
+        def expected(r, c):
+            t = (r*COLS + c)/(TAXELS - 1)
+            return bytes(round(v*255) for v in viz._colormap(t))
+
+        for r, c in [(0, 0), (0, 3), (2, 1), (4, 3), (6, 0), (6, 3)]:
+            assert px(r, c) == expected(r, c), f'pixel ({r},{c})'
+    finally:
+        node.destroy_node()

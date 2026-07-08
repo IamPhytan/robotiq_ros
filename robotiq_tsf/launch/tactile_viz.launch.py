@@ -9,10 +9,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -28,15 +30,11 @@ def generate_launch_description():
     input_topic_arg = DeclareLaunchArgument(
         'input_topic', default_value='TactileSensor/StaticData',
         description='Raw StaticData topic published by the driver.')
-    poller_arg = DeclareLaunchArgument(
-        'poller', default_value='poll_data_node',
-        description='Driver executable publishing StaticData. Override to '
-                    'point the viz at an alternative poller.')
 
-    # Sensor driver — autodetects the device.
-    poll = Node(
-        package='robotiq_tsf', executable=LaunchConfiguration('poller'),
-        name='poll_data', output='screen')
+    # Sensor driver (poller:= arg declared there).
+    driver = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(PathJoinSubstitution([
+            FindPackageShare('robotiq_tsf'), 'launch', 'tsf_driver.launch.py'])))
 
     viz = Node(
         package='robotiq_tsf', executable='tactile_viz_node',
@@ -49,4 +47,4 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rviz')))
 
     return LaunchDescription(
-        [rviz_arg, rviz_config_arg, input_topic_arg, poller_arg, poll, viz, rviz])
+        [rviz_arg, rviz_config_arg, input_topic_arg, driver, viz, rviz])

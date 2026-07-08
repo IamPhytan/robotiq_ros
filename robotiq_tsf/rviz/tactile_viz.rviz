@@ -79,6 +79,20 @@ Visualization Manager:
       Max Value: 1
       Median window: 5
       Min Value: 0
+      Name: Finger 0 Pressure Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /tactile_viz/finger0_heatmap
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Finger 1 Pressure Image
       Normalize Range: true
       Topic:
@@ -87,20 +101,6 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /tactile_viz/finger1_heatmap
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Enabled: true
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: Finger 2 Pressure Image
-      Normalize Range: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /tactile_viz/finger2_heatmap
       Value: true
   Enabled: true
   Global Options:
