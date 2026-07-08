@@ -1,6 +1,9 @@
-# Build robotiq_tsf and run its unit tests (colcon test) on the CI runner.
-# First build+test workflow in the repo — the algorithm code (MadgwickAHRS)
-# is pure math and needs no sensor hardware.
+# Build robotiq_tsf and run its unit tests (colcon test) inside a ROS container.
+# Running in ros:<distro>-ros-base gives a complete, consistent ROS environment.
+# The previous setup-ros-on-a-bare-runner approach intermittently produced an
+# incomplete ROS install (missing ament_package / rosidl_typesupport_c /
+# librcl_action.so), which flaked this job; the container removes that class of
+# failure.
 # Distro policy: LTS only — matrix is [jazzy] now, add lyrical when it ships
 # (see ros-driver distro-compat policy; distro pairs with its Ubuntu LTS).
 name: ROS Build & Test (robotiq_tsf)
@@ -16,6 +19,8 @@ jobs:
   build_and_test:
     name: colcon test (${{ matrix.ros_distro }})
     runs-on: ${{ matrix.os }}
+    container:
+      image: ros:${{ matrix.ros_distro }}-ros-base
     strategy:
       fail-fast: false
       matrix:
@@ -23,10 +28,18 @@ jobs:
           - ros_distro: jazzy
             os: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: ${{ matrix.ros_distro }}
+      # ros-base is minimal: it lacks git (needed by actions/checkout) and the
+      # colcon coverage plugins that action-ros-ci invokes by default
+      # (colcon lcov-result / coveragepy-result). Install them up front.
+      - name: Install tooling missing from ros-base
+        run: |
+          apt-get update
+          apt-get install -y git lcov \
+            python3-colcon-lcov-result python3-colcon-coveragepy-result
+      - uses: actions/checkout@v5
+      # action-ros-ci runs git against the checkout as root inside the container;
+      # mark it safe to avoid git's "dubious ownership" error.
+      - run: git config --global --add safe.directory '*'
       - uses: ros-tooling/action-ros-ci@v0.4
         with:
           package-name: robotiq_tsf
