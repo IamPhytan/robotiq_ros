@@ -32,7 +32,21 @@
   <depend>libopencv-dev</depend>
   <depend>libusb-1.0</depend>
 
+  <!-- tactile_viz_node (Python RViz visualization) + its launch/rviz. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <!-- gripper_tactile_viz.launch.py includes the gripper bringup. -->
+  <exec_depend>robotiq_description</exec_depend>
+
   <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

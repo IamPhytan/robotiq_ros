@@ -2,6 +2,8 @@ build/
 install/
 log/
 serial/
+__pycache__/
+*.pyc
 
 # IDE / per-machine cmake config
 .qtcreator/
