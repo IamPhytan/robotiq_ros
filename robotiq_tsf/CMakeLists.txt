@@ -8,14 +8,11 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(PkgConfig REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(Threads REQUIRED)
-
-pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
 
 set(MSG_FILES
   "msg/Accelerometer.msg"
@@ -52,7 +49,6 @@ list(APPEND interface_targets_installed ${PROJECT_NAME}__rosidl_generator_py)
 include_directories(
   include
   include/robotiq_tsf
-  ${LIBUSB_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 )
 
@@ -79,7 +75,6 @@ target_include_directories(poll_data_node
 target_link_libraries(poll_data_node
   ${PROJECT_NAME}_algorithms
   ${cpp_typesupport_target}
-  ${LIBUSB_LIBRARIES}
   ${OpenCV_LIBRARIES}
   Threads::Threads
 )
