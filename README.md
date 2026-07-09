@@ -76,6 +76,72 @@ ROS 2 `ros2_control` driver for Robotiq grippers (2F-85 / 2F-140, Hand-E), under
 
 `grippers/` is a vendored copy of PickNik Robotics' [`ros2_robotiq_gripper`](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause), imported via `git subtree` at upstream commit `3b6cf8f` with its history preserved, and maintained here in-tree. Upstream copyright and `<author>` tags are retained.
 
+### Migrating from PickNik's ros2_robotiq_gripper
+
+This repository is the maintained continuation of the PickNik package. Package names (`robotiq_driver`, `robotiq_controllers`, `robotiq_description`, `robotiq_hardware_tests`), launch files, controller names, and the `/robotiq_gripper_controller/gripper_cmd` action are all unchanged, so at the workspace level it is a drop-in replacement.
+
+**Docker (recommended):**
+
+```bash
+git clone --recurse-submodules https://github.com/robotiq/ros.git
+cd ros && ./docker/run.sh gripper
+```
+
+**Existing ROS 2 Jazzy workspace:**
+
+```bash
+cd ~/ws/src
+rm -rf ros2_robotiq_gripper        # remove the PickNik clone to prevent duplicate package name failures
+git clone --recurse-submodules https://github.com/robotiq/ros.git
+vcs import < ros/grippers/ros2_robotiq_gripper.rolling.repos   # same external `serial` dep as before
+cd ~/ws
+rosdep install --from-paths src --ignore-src -y
+rm -rf build install               # clear artifacts built from the PickNik sources
+colcon build
+```
+
+This repository also contains the TSF-85 sensor stack. To build only the gripper packages and their dependencies (including `serial`), replace the last step with:
+
+```bash
+colcon build --packages-up-to robotiq_description robotiq_controllers robotiq_hardware_tests
+```
+
+#### Coming from the `humble` branch
+
+The `main`/`rolling` line (which this repo continues) has breaking changes relative to PickNik's `humble` branch — all made upstream by PickNik, before the import into this repository:
+
+| | PickNik `humble` | This repository |
+|---|---|---|
+| ROS distro | Humble | Jazzy |
+| Dependencies file | `ros2_robotiq_gripper.humble.repos` | `grippers/ros2_robotiq_gripper.rolling.repos` |
+| `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `parallel_gripper_action_controller/GripperActionController` |
+| `gripper_cmd` action type | `control_msgs/action/GripperCommand` | `control_msgs/action/ParallelGripperCommand` |
+
+The controller switch tracks ROS itself: `gripper_controllers` is removed in Kilted+, and `parallel_gripper_controller` is its replacement available from Jazzy on (upstream [PickNik PR #103](https://github.com/PickNikRobotics/ros2_robotiq_gripper/pull/103)).
+
+Action clients must switch to the `ParallelGripperCommand` goal — a `sensor_msgs/JointState` naming the knuckle joint:
+
+```bash
+# PickNik humble (old)
+ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
+  control_msgs/action/GripperCommand \
+  "{command: {position: 0.4, max_effort: 50.0}}"
+
+# This repository (new)
+ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
+  control_msgs/action/ParallelGripperCommand \
+  "{command: {name: ['robotiq_85_left_knuckle_joint'], position: [0.4], effort: [40.0]}}"
+```
+
+`position` is still the knuckle angle in radians (≈ `0.0` open → ~`0.8` closed on a 2F-85), now as an array on the named joint; `max_effort` becomes the optional `effort` / `velocity` arrays. See [Commanding the gripper](#commanding-the-gripper) for details.
+
+#### What you gain
+
+- `use_fake_hardware` launch arg on `robotiq_control.launch.py` (hardware-free bringup, previously hardcoded off)
+- Actionable error messages when the gripper does not respond (24 V power, RS-485 wiring, `slave_address` / `baudrate` hints)
+- A unified Docker image with device mapping ([Docker](#docker))
+- Active maintenance — PickNik's in-tree README and CI were removed; docs live in this README, and issues go to [robotiq/ros/issues](https://github.com/robotiq/ros/issues)
+
 | Package | Description |
 |---|---|
 | `robotiq_driver` | `ros2_control` hardware interface (Modbus RTU over serial) |
