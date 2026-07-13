@@ -41,7 +41,6 @@ Brings up, in one RViz:
 
 Run this INSTEAD of the separate gripper / tactile_viz launches.
 """
-
 import math
 import os
 
@@ -80,6 +79,12 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument(
             "com_port", default_value="/dev/ttyUSB0", description="Gripper serial port."
+        ),
+        DeclareLaunchArgument(
+            "poller",
+            default_value="poll_data_sdk_node",
+            description="Driver executable publishing StaticData. Override to "
+            "point the viz at an alternative poller.",
         ),
         DeclareLaunchArgument(
             "use_fake_hardware",

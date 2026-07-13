@@ -1,2 +1,8 @@
 .git
-extern
+# Ignore everything under extern EXCEPT the tactile_sensors SDK, which the
+# image builds into robotiq_tsf's poll_data_sdk_node. (Re-including a nested
+# path requires un-ignoring each parent dir.)
+extern/*
+!extern/tactile_sensors
+extern/tactile_sensors/*
+!extern/tactile_sensors/sdk_cpp

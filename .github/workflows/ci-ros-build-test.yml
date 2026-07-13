@@ -33,12 +33,18 @@ jobs:
       # ros-base is minimal: it lacks git (needed by actions/checkout) and the
       # colcon coverage plugins that action-ros-ci invokes by default
       # (colcon lcov-result / coveragepy-result). Install them up front.
+      # libserialport-dev: the SDK's serial backend — no rosdep rule exists for
+      # the bare `libserialport` key, so install it directly and skip the key.
       - name: Install tooling missing from ros-base
         run: |
           apt-get update
-          apt-get install -y git lcov \
+          apt-get install -y git lcov libserialport-dev \
             python3-colcon-lcov-result python3-colcon-coveragepy-result
       - uses: actions/checkout@v5
+        with:
+          # poll_data_sdk_node compiles the tactile_sensors SDK from the
+          # extern/ submodule.
+          submodules: true
       # action-ros-ci runs git against the checkout as root inside the container;
       # mark it safe to avoid git's "dubious ownership" error.
       - run: git config --global --add safe.directory '*'
@@ -52,5 +58,7 @@ jobs:
             robotiq_hardware_tests
           target-ros2-distro: ${{ matrix.ros_distro }}
           # robotiq_driver's `serial` dep has no rosdep rule — import it from
-          # source via the upstream .repos file.
+          # source via the upstream .repos file. libserialport (the SDK's serial
+          # backend) is installed above, so skip its rosdep key.
           vcs-repo-file-url: "${{ github.workspace }}/grippers/ros2_robotiq_gripper.rolling.repos"
+          rosdep-skip-keys: libserialport

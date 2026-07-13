@@ -33,7 +33,6 @@
 
 Assumes the sensor is connected (see docker/run.sh sensor for device mapping).
 """
-
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -64,6 +63,12 @@ def generate_launch_description():
         "input_topic",
         default_value="TactileSensor/StaticData",
         description="Raw StaticData topic published by the driver.",
+    )
+    poller_arg = DeclareLaunchArgument(
+        "poller",
+        default_value="poll_data_sdk_node",
+        description="Driver executable publishing StaticData. Override to "
+        "point the viz at an alternative poller.",
     )
 
     # Sensor driver (poller:= arg declared there).
