@@ -1,31 +1,27 @@
-// SDK-backed ROS 2 wrapper for the Robotiq TSF tactile sensor.
-//
-// This node owns a RobotiqTactileSensor (from extern/tactile_sensors/sdk_cpp)
-// and republishes the SDK's Fingers callback onto the same topics and
-// message types as the legacy PollData.cpp node. The USB / packet / parsing
-// logic lives in the SDK — this file contains only the bridge into ROS.
+// Implementation of PollDataSdkNode (declared in poll_data_sdk_node.hpp).
+// The USB / packet / parsing logic lives in the SDK; this file is the bridge
+// into ROS plus the AHRS fusion. main() is in poll_data_sdk_main.cpp so the
+// class can be constructed by unit tests without a hardware sensor.
+
+#include "robotiq_tsf/poll_data_sdk_node.hpp"
+
+#include "robotiq_tsf/device_autodetect.hpp"
+#include "robotiq_tsf/sdk_bridge.hpp"
 
 #include "rclcpp/rclcpp.hpp"
+
+// Full per-field message headers: create_publisher<T> needs each type's
+// typesupport (the header only needs their struct definitions, via sensor.hpp).
 #include "robotiq_tsf/msg/accelerometer.hpp"
 #include "robotiq_tsf/msg/dynamic.hpp"
 #include "robotiq_tsf/msg/euler_angle.hpp"
 #include "robotiq_tsf/msg/gyroscope.hpp"
-#include "robotiq_tsf/msg/sensor.hpp"
 #include "robotiq_tsf/msg/static_data.hpp"
 #include "robotiq_tsf/msg/timestamp.hpp"
-#include "robotiq_tsf/srv/tactile_sensors.hpp"
-
-#include "robotiq_tsf/MadgwickAHRS.h"
-#include "robotiq_tsf/device_autodetect.hpp"
-#include "robotiq_tsf/sdk_bridge.hpp"
 
 #include "RobotiqTactileSensor.h"
-#include "finger_data.h"
 
-#include <atomic>
-#include <chrono>
 #include <cmath>
-#include <memory>
 #include <string>
 #include <strings.h>
 #include <thread>
@@ -41,64 +37,12 @@ constexpr float kAccelRes = 2.0f / 32768.0f;
 constexpr float kGyroRes = 250.0f / 32768.0f;
 // SDK sampling period: 1 ms (~1 kHz request rate).
 constexpr unsigned int kSamplePeriodMs = 1;
-}
 
-class PollDataSdkNode : public rclcpp::Node
-{
-public:
-    PollDataSdkNode();
-    ~PollDataSdkNode() override;
-
-    bool startSensor();
-    bool waitForStreaming();
-    void handleFingers(const Fingers &fingers);
-
-private:
-    void serviceCallback(
-        const std::shared_ptr<srv::TactileSensors::Request> req,
-        std::shared_ptr<srv::TactileSensors::Response> res);
-
-    rclcpp::Publisher<msg::StaticData>::SharedPtr static_pub_;
-    rclcpp::Publisher<msg::Dynamic>::SharedPtr dynamic_pub_;
-    rclcpp::Publisher<msg::Accelerometer>::SharedPtr accel_pub_;
-    rclcpp::Publisher<msg::Gyroscope>::SharedPtr gyro_pub_;
-    rclcpp::Publisher<msg::EulerAngle>::SharedPtr euler_pub_;
-    rclcpp::Publisher<msg::Timestamp>::SharedPtr ts_pub_;
-    rclcpp::Service<srv::TactileSensors>::SharedPtr service_;
-
-    std::unique_ptr<RobotiqTactileSensor> sensor_;
-    msg::Sensor sensors_data_;
-
-    // Optional publish-rate throttle. Default 0 = publish every packet at the
-    // sensor's native rate (~700 Hz), as poll_data_node did. A positive
-    // publish_rate_hz decimates the publishes for downstream consumers that
-    // don't need the full rate; the IMU fusion + bias calc still run on every
-    // packet regardless (fusion accuracy needs the full rate).
-    // Read/written only from the single SDK callback thread.
-    double publish_period_s_ = 0.0;
-    std::chrono::steady_clock::time_point last_pub_{};
-
-    int bias_iter_ = 0;
-    float ax1_bias_ = 0, ay1_bias_ = 0, az1_bias_ = 0;
-    float ax2_bias_ = 0, ay2_bias_ = 0, az2_bias_ = 0;
-    float gx1_bias_ = 0, gy1_bias_ = 0, gz1_bias_ = 0;
-    float gx2_bias_ = 0, gy2_bias_ = 0, gz2_bias_ = 0;
-
-    // AHRS filter — one instance per finger; integrated on every SDK packet.
-    MadgwickFilter filter_[FINGER_COUNT];
-    std::chrono::steady_clock::time_point last_update_{};
-
-    std::atomic<bool> stopped_{false};
-    std::atomic<uint64_t> frames_received_{0};
-};
-
-namespace
-{
-// The SDK callback is a plain C function pointer with no user-data argument,
-// so we reach the node instance through this file-scoped pointer. It is set
-// once the node is constructed (before the SDK reader thread starts) and
-// cleared in the node's destructor; atomic because the reader thread reads it
-// concurrently with those writes.
+// The SDK callback is a plain C function pointer with no user-data argument, so
+// we reach the node instance through this file-scoped pointer. The node sets it
+// to `this` at the end of construction (before startSensor() creates the SDK
+// reader thread) and clears it in the destructor; atomic because the reader
+// thread reads it concurrently with those writes.
 std::atomic<PollDataSdkNode *> g_node_for_callback{nullptr};
 
 void onSensorData(const Fingers &fingers)
@@ -108,12 +52,12 @@ void onSensorData(const Fingers &fingers)
         node->handleFingers(fingers);
     }
 }
-}
+}  // namespace
 
-// Stop dispatching to this node, then join the SDK reader thread (in
-// sensor_'s destructor) while every member it touches is still alive. Doing
-// this here rather than relying on member-destruction order avoids a
-// use-after-free: the reader thread outlives the node otherwise.
+// Stop dispatching to this node, then join the SDK reader thread (in sensor_'s
+// destructor) while every member it touches is still alive. Doing this here
+// rather than relying on member-destruction order avoids a use-after-free: the
+// reader thread outlives the node otherwise.
 PollDataSdkNode::~PollDataSdkNode()
 {
     g_node_for_callback.store(nullptr, std::memory_order_release);
@@ -145,6 +89,10 @@ PollDataSdkNode::PollDataSdkNode()
         [this](const std::shared_ptr<srv::TactileSensors::Request> req,
                std::shared_ptr<srv::TactileSensors::Response> res)
         { serviceCallback(req, res); });
+
+    // Register for the SDK C callback last: everything it touches now exists,
+    // and the reader thread that invokes it isn't created until startSensor().
+    g_node_for_callback.store(this, std::memory_order_release);
 }
 
 bool PollDataSdkNode::startSensor()
@@ -353,9 +301,9 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
         const auto now = std::chrono::steady_clock::now();
         if (last_pub_.time_since_epoch().count() != 0)
         {
-            const double dt =
+            const double elapsed =
                 std::chrono::duration<double>(now - last_pub_).count();
-            if (dt < publish_period_s_)
+            if (elapsed < publish_period_s_)
                 return;
         }
         last_pub_ = now;
@@ -370,23 +318,4 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
     {
         euler_pub_->publish(sensors_data_.eulerangle);
     }
-}
-
-int main(int argc, char **argv)
-{
-    rclcpp::init(argc, argv);
-
-    auto node = std::make_shared<PollDataSdkNode>();
-    g_node_for_callback.store(node.get(), std::memory_order_release);
-
-    if (!node->startSensor() || !node->waitForStreaming())
-    {
-        rclcpp::shutdown();
-        return 1;
-    }
-
-    rclcpp::spin(node);
-
-    rclcpp::shutdown();
-    return 0;
 }

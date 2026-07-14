@@ -86,27 +86,33 @@ target_link_libraries(${PROJECT_NAME}_algorithms
     ${OpenCV_LIBRARIES}
 )
 
-add_executable(poll_data_sdk_node
+# SDK poller node logic as a static library, so the executable and the unit
+# tests share a single build of the sources instead of recompiling them.
+add_library(poll_data_sdk_lib STATIC
   src/poll_data_sdk.cpp
   src/device_autodetect.cpp
   src/sdk_bridge.cpp
 )
-target_include_directories(poll_data_sdk_node
-  PRIVATE
+target_include_directories(poll_data_sdk_lib
+  PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${TSF_SDK_DIR}
 )
-target_link_libraries(poll_data_sdk_node
+target_link_libraries(poll_data_sdk_lib
   ${PROJECT_NAME}_algorithms
   ${cpp_typesupport_target}
   robotiq_tactile_sdk
   Threads::Threads
 )
-ament_target_dependencies(poll_data_sdk_node
+ament_target_dependencies(poll_data_sdk_lib
   rclcpp
   std_msgs
   sensor_msgs
   ament_index_cpp
 )
+
+add_executable(poll_data_sdk_node src/poll_data_sdk_main.cpp)
+target_link_libraries(poll_data_sdk_node poll_data_sdk_lib)
 
 add_executable(tactile_total_sum_node src/tactile_total_sum.cpp)
 target_include_directories(tactile_total_sum_node

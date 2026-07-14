@@ -1,32 +1,20 @@
 find_package(ament_cmake_gtest REQUIRED)
 find_package(ament_cmake_pytest REQUIRED)
 
-ament_add_gtest(test_madgwick_ahrs
-  test_madgwick_ahrs.cpp
-  gtest_main.cpp
-  SKIP_LINKING_MAIN_LIBRARIES
-)
+# Each gtest links the compiled libraries (poll_data_sdk_lib / _algorithms)
+# rather than recompiling the sources; header include paths come with them.
+
+# MadgwickAHRS math helpers.
+ament_add_gtest(test_madgwick_ahrs test_madgwick_ahrs.cpp)
 target_link_libraries(test_madgwick_ahrs ${PROJECT_NAME}_algorithms)
 
-ament_add_gtest(test_device_autodetect
-  test_device_autodetect.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../src/device_autodetect.cpp
-  gtest_main.cpp
-  SKIP_LINKING_MAIN_LIBRARIES
-)
-target_include_directories(test_device_autodetect
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+# Device autodetect (udev symlink / sysfs-tty descriptor scanning).
+ament_add_gtest(test_device_autodetect test_device_autodetect.cpp)
+target_link_libraries(test_device_autodetect poll_data_sdk_lib)
 
-ament_add_gtest(test_sdk_bridge
-  test_sdk_bridge.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../src/sdk_bridge.cpp
-  gtest_main.cpp
-  SKIP_LINKING_MAIN_LIBRARIES
-)
-target_include_directories(test_sdk_bridge PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../include
-  ${TSF_SDK_DIR})
-target_link_libraries(test_sdk_bridge ${cpp_typesupport_target})
+# SDK Fingers -> ROS message mapping.
+ament_add_gtest(test_sdk_bridge test_sdk_bridge.cpp)
+target_link_libraries(test_sdk_bridge poll_data_sdk_lib)
 
 # Unit tests for scripts/tactile_viz_node (drives the node callbacks directly;
 # needs this package's generated Python messages, hence the deferred import
