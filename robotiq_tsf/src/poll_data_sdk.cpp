@@ -16,6 +16,7 @@
 #include "robotiq_tsf/msg/dynamic.hpp"
 #include "robotiq_tsf/msg/euler_angle.hpp"
 #include "robotiq_tsf/msg/gyroscope.hpp"
+#include "robotiq_tsf/msg/quaternion.hpp"
 #include "robotiq_tsf/msg/static_data.hpp"
 #include "robotiq_tsf/msg/timestamp.hpp"
 
@@ -76,12 +77,38 @@ PollDataSdkNode::PollDataSdkNode()
         declare_parameter<double>("publish_rate_hz", 0.0);
     publish_period_s_ = publish_rate_hz > 0.0 ? 1.0 / publish_rate_hz : 0.0;
 
+    // AHRS tunables (madgwick.*), matching the legacy poll_data_node so existing
+    // launch files / configs that set them keep working.
+    ahrs_cfg_.beta = static_cast<float>(
+        declare_parameter<double>("madgwick.beta", ahrs_cfg_.beta));
+    ahrs_cfg_.accel_gate_lo = static_cast<float>(
+        declare_parameter<double>("madgwick.accel_gate_lo", ahrs_cfg_.accel_gate_lo));
+    ahrs_cfg_.accel_gate_hi = static_cast<float>(
+        declare_parameter<double>("madgwick.accel_gate_hi", ahrs_cfg_.accel_gate_hi));
+    ahrs_cfg_.bias_learn_rate = static_cast<float>(
+        declare_parameter<double>("madgwick.bias_learn_rate", ahrs_cfg_.bias_learn_rate));
+    ahrs_cfg_.still_gyro_eps_deg_s = static_cast<float>(
+        declare_parameter<double>("madgwick.still_gyro_eps_deg_s", ahrs_cfg_.still_gyro_eps_deg_s));
+    ahrs_cfg_.still_accel_eps_g = static_cast<float>(
+        declare_parameter<double>("madgwick.still_accel_eps_g", ahrs_cfg_.still_accel_eps_g));
+    ahrs_cfg_.dt_clamp_lo = static_cast<float>(
+        declare_parameter<double>("madgwick.dt_clamp_lo", ahrs_cfg_.dt_clamp_lo));
+    ahrs_cfg_.dt_clamp_hi = static_cast<float>(
+        declare_parameter<double>("madgwick.dt_clamp_hi", ahrs_cfg_.dt_clamp_hi));
+
+    for (int f = 0; f < FINGER_COUNT; ++f)
+    {
+        filter_[f].setBeta(ahrs_cfg_.beta);
+        filter_[f].setAccelGate(ahrs_cfg_.accel_gate_lo, ahrs_cfg_.accel_gate_hi);
+    }
+
     auto qos = rclcpp::SensorDataQoS();
     static_pub_ = create_publisher<msg::StaticData>("TactileSensor/StaticData", qos);
     dynamic_pub_ = create_publisher<msg::Dynamic>("TactileSensor/Dynamic", qos);
     accel_pub_ = create_publisher<msg::Accelerometer>("TactileSensor/Accelerometer", qos);
     gyro_pub_ = create_publisher<msg::Gyroscope>("TactileSensor/Gyroscope", qos);
     euler_pub_ = create_publisher<msg::EulerAngle>("TactileSensor/EulerAngle", qos);
+    quat_pub_ = create_publisher<msg::Quaternion>("TactileSensor/Quaternion", qos);
     ts_pub_ = create_publisher<msg::Timestamp>("TactileSensor/Timestamp", qos);
 
     service_ = create_service<srv::TactileSensors>(
@@ -216,13 +243,6 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
 
     robotiq_tsf::fillSensorMessages(fingers, sensors_data_);
 
-    // Measured dt for the filter integration (the SDK streams at ~700 Hz).
-    const auto now_upd = std::chrono::steady_clock::now();
-    float dt = 1.0f / 700.0f;  // fallback on the first sample
-    if (last_update_.time_since_epoch().count() != 0)
-        dt = std::chrono::duration<float>(now_upd - last_update_).count();
-    last_update_ = now_upd;
-
     if (bias_iter_ > kBiasCalculationIterations)
     {
         // Bias-corrected IMU: accel in g, gyro in deg/s.
@@ -239,11 +259,55 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
         const float gy2 = fingers.finger[1].gyroscope[1] * kGyroRes - gy2_bias_;
         const float gz2 = fingers.finger[1].gyroscope[2] * kGyroRes - gz2_bias_;
 
+        // Integration step from each finger's MCU timestamp (immune to host
+        // jitter, and to the stall a stop()->start() cycle would inject). 0 = not
+        // usable (first sample after calibration, or a duplicate/backwards
+        // timestamp) -> skip integration for that finger this frame.
+        const float dt1 = robotiq_tsf::deriveDt(last_ts_ms_[0], fingers.finger[0].timestamp,
+                                                ahrs_cfg_.dt_clamp_lo, ahrs_cfg_.dt_clamp_hi);
+        const float dt2 = robotiq_tsf::deriveDt(last_ts_ms_[1], fingers.finger[1].timestamp,
+                                                ahrs_cfg_.dt_clamp_lo, ahrs_cfg_.dt_clamp_hi);
+        last_ts_ms_[0] = fingers.finger[0].timestamp;
+        last_ts_ms_[1] = fingers.finger[1].timestamp;
+
         constexpr float deg_to_rad = static_cast<float>(M_PI / 180.0);
-        filter_[0].updateIMU(gx1 * deg_to_rad, gy1 * deg_to_rad, gz1 * deg_to_rad,
-                             ax1, ay1, az1, dt);
-        filter_[1].updateIMU(gx2 * deg_to_rad, gy2 * deg_to_rad, gz2 * deg_to_rad,
-                             ax2, ay2, az2, dt);
+        if (dt1 > 0.0f)
+            filter_[0].updateIMU(gx1 * deg_to_rad, gy1 * deg_to_rad, gz1 * deg_to_rad,
+                                 ax1, ay1, az1, dt1);
+        if (dt2 > 0.0f)
+            filter_[1].updateIMU(gx2 * deg_to_rad, gy2 * deg_to_rad, gz2 * deg_to_rad,
+                                 ax2, ay2, az2, dt2);
+
+        // Online gyro-bias trim while stationary: drift the stored bias slowly
+        // toward the residual, so a frozen bias can't leak thermal drift into yaw.
+        const float alpha = ahrs_cfg_.bias_learn_rate;
+        if (dt1 > 0.0f && robotiq_tsf::sampleIsStill(gx1, gy1, gz1, ax1, ay1, az1,
+                                                     ahrs_cfg_.still_gyro_eps_deg_s,
+                                                     ahrs_cfg_.still_accel_eps_g))
+        {
+            gx1_bias_ = robotiq_tsf::trimBias(gx1_bias_, gx1, alpha);
+            gy1_bias_ = robotiq_tsf::trimBias(gy1_bias_, gy1, alpha);
+            gz1_bias_ = robotiq_tsf::trimBias(gz1_bias_, gz1, alpha);
+        }
+        if (dt2 > 0.0f && robotiq_tsf::sampleIsStill(gx2, gy2, gz2, ax2, ay2, az2,
+                                                     ahrs_cfg_.still_gyro_eps_deg_s,
+                                                     ahrs_cfg_.still_accel_eps_g))
+        {
+            gx2_bias_ = robotiq_tsf::trimBias(gx2_bias_, gx2, alpha);
+            gy2_bias_ = robotiq_tsf::trimBias(gy2_bias_, gy2, alpha);
+            gz2_bias_ = robotiq_tsf::trimBias(gz2_bias_, gz2, alpha);
+        }
+
+        // One absolute filter quaternion sources both orientation topics; Euler
+        // wraps at ±180°, so continuous-orientation consumers use Quaternion.
+        float q1[4], q2[4];
+        filter_[0].getQuaternion(q1[0], q1[1], q1[2], q1[3]);
+        filter_[1].getQuaternion(q2[0], q2[1], q2[2], q2[3]);
+        for (int i = 0; i < 4; ++i)
+        {
+            sensors_data_.quaternion.data[0].values[i] = q1[i];
+            sensors_data_.quaternion.data[1].values[i] = q2[i];
+        }
 
         filter_[0].getEulerDeg(sensors_data_.eulerangle.data[0].values[0],
                                sensors_data_.eulerangle.data[0].values[1],
@@ -274,6 +338,10 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
         filter_[1].initFromAccel(ax2_bias_, ay2_bias_, az2_bias_);
         ax1_bias_ = ay1_bias_ = az1_bias_ = 0.0f;
         ax2_bias_ = ay2_bias_ = az2_bias_ = 0.0f;
+
+        // Reseed the per-finger dt so the first post-calibration sample skips
+        // integration instead of using a stale delta spanning the calibration.
+        last_ts_ms_[0] = last_ts_ms_[1] = 0;
         ++bias_iter_;
     }
     else
@@ -317,5 +385,6 @@ void PollDataSdkNode::handleFingers(const Fingers &fingers)
     if (bias_iter_ > kBiasCalculationIterations)
     {
         euler_pub_->publish(sensors_data_.eulerangle);
+        quat_pub_->publish(sensors_data_.quaternion);
     }
 }

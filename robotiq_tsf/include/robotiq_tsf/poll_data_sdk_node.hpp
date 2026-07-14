@@ -18,6 +18,7 @@
 #include "robotiq_tsf/srv/tactile_sensors.hpp"
 
 #include "robotiq_tsf/MadgwickAHRS.h"  // MadgwickFilter (by-value array member)
+#include "robotiq_tsf/fusion.hpp"      // AhrsConfig (by-value member)
 
 #include "finger_data.h"  // Fingers, FINGER_COUNT
 
@@ -51,6 +52,7 @@ private:
     rclcpp::Publisher<robotiq_tsf::msg::Accelerometer>::SharedPtr accel_pub_;
     rclcpp::Publisher<robotiq_tsf::msg::Gyroscope>::SharedPtr gyro_pub_;
     rclcpp::Publisher<robotiq_tsf::msg::EulerAngle>::SharedPtr euler_pub_;
+    rclcpp::Publisher<robotiq_tsf::msg::Quaternion>::SharedPtr quat_pub_;
     rclcpp::Publisher<robotiq_tsf::msg::Timestamp>::SharedPtr ts_pub_;
     rclcpp::Service<robotiq_tsf::srv::TactileSensors>::SharedPtr service_;
 
@@ -74,8 +76,11 @@ private:
     float gx2_bias_ = 0, gy2_bias_ = 0, gz2_bias_ = 0;
 
     // AHRS filter — one instance per finger; integrated on every SDK packet.
+    robotiq_tsf::AhrsConfig ahrs_cfg_;
     MadgwickFilter filter_[FINGER_COUNT];
-    std::chrono::steady_clock::time_point last_update_{};
+    // Per-finger MCU timestamp (ms) of the last integrated sample; 0 = not yet
+    // seeded (start of stream, or just after the bias calibration).
+    uint64_t last_ts_ms_[FINGER_COUNT] = {0, 0};
 
     std::atomic<bool> stopped_{false};
     std::atomic<uint64_t> frames_received_{0};
