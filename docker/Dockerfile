@@ -44,15 +44,6 @@ COPY grippers    /ws/src/grippers
 # Gripper's external `serial` dep (tylerjw/serial), via the upstream .repos file.
 RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
 
-# Temporary (PickNik issue #114): the controller config references command
-# interfaces the hardware does not expose; rename so robotiq_gripper_controller
-# activates. The forked source stays pristine — the patch is applied only in
-# this image, and drops out once the wrapper uses canonical interface names.
-RUN sed -i \
-    -e 's|robotiq_85_left_knuckle_joint/effort|robotiq_85_left_knuckle_joint/set_gripper_max_effort|g' \
-    -e 's|robotiq_85_left_knuckle_joint/velocity|robotiq_85_left_knuckle_joint/set_gripper_max_velocity|g' \
-    /ws/src/grippers/robotiq_description/config/robotiq_controllers.yaml
-
 # Resolve any remaining rosdeps from the package manifests, then build Release.
 RUN apt-get update \
     && rosdep install --from-paths /ws/src --ignore-src -y --rosdistro ${ROS_DISTRO} \

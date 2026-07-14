@@ -1,4 +1,5 @@
-# Build robotiq_tsf and run its unit tests (colcon test) inside a ROS container.
+# Build robotiq_tsf and the gripper packages and run their unit tests
+# (colcon test) inside a ROS container.
 # Running in ros:<distro>-ros-base gives a complete, consistent ROS environment.
 # The previous setup-ros-on-a-bare-runner approach intermittently produced an
 # incomplete ROS install (missing ament_package / rosidl_typesupport_c /
@@ -6,12 +7,13 @@
 # failure.
 # Distro policy: LTS only — matrix is [jazzy] now, add lyrical when it ships
 # (see ros-driver distro-compat policy; distro pairs with its Ubuntu LTS).
-name: ROS Build & Test (robotiq_tsf)
+name: ROS Build & Test
 
 on:
   pull_request:
     paths:
       - "robotiq_tsf/**"
+      - "grippers/**"
       - ".github/workflows/ci-ros-build-test.yml"
   workflow_dispatch:
 
@@ -42,9 +44,13 @@ jobs:
       - run: git config --global --add safe.directory '*'
       - uses: ros-tooling/action-ros-ci@v0.4
         with:
-          package-name: robotiq_tsf
+          package-name: >-
+            robotiq_tsf
+            robotiq_driver
+            robotiq_controllers
+            robotiq_description
+            robotiq_hardware_tests
           target-ros2-distro: ${{ matrix.ros_distro }}
-          # robotiq_driver's `serial` dep has no rosdep rule — it is imported
-          # from source (vcs) only when the grippers are built. This workflow
-          # only builds robotiq_tsf, so skip the key rather than import it.
-          rosdep-skip-keys: serial
+          # robotiq_driver's `serial` dep has no rosdep rule — import it from
+          # source via the upstream .repos file.
+          vcs-repo-file-url: "${{ github.workspace }}/grippers/ros2_robotiq_gripper.rolling.repos"
