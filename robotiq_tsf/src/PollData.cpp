@@ -27,7 +27,7 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 //              required. "BIASCalculationIterations" is a global variable defined just
 //              below.
 //              2) During the biases calculations, it is mandatory that the imus remain
-//              still, i.e.: the sensors sould not be moving / vibrating at all.
+//              still, i.e.: the sensors should not be moving / vibrating at all.
 //
 //
 //Examples:     1)  rosrun tactilesensors PollData -sensor 1,2,5
@@ -643,7 +643,7 @@ char* getCmdOption(char** begin, char** end, const string& option)
 //              rights (that suppose that the user has done "sudo chmod 777 /dev/ttyUSB0"
 //              before. If it succeeds, it returns true, otherwise it returns false.
 //
-//Arguments:    int *USB: A pointer thats points file descriptor attached to ttyUSB0
+//Arguments:    int *USB: A pointer that points file descriptor attached to ttyUSB0
 //                          device.
 //              char const * TheDevice: The string of the device we want to open.
 //                          (e.g. /dev/ttyACM0).

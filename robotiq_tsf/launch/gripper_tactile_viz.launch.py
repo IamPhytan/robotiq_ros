@@ -13,17 +13,22 @@ Brings up, in one RViz:
 
 Run this INSTEAD of the separate gripper / tactile_viz launches.
 """
+
 import math
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument, IncludeLaunchDescription, TimerAction,
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
-    LaunchConfiguration, PathJoinSubstitution, PythonExpression,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -37,55 +42,74 @@ TACTILE_MOUNT_Z_M = 0.032
 
 
 def generate_launch_description():
-    pkg_tsf = get_package_share_directory('robotiq_tsf')
-    default_rviz = os.path.join(pkg_tsf, 'rviz', 'gripper_tactile.rviz')
+    pkg_tsf = get_package_share_directory("robotiq_tsf")
+    default_rviz = os.path.join(pkg_tsf, "rviz", "gripper_tactile.rviz")
 
-    com_port = LaunchConfiguration('com_port')
-    use_fake_hardware = LaunchConfiguration('use_fake_hardware')
-    rviz_config = LaunchConfiguration('rviz_config')
+    com_port = LaunchConfiguration("com_port")
+    use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    rviz_config = LaunchConfiguration("rviz_config")
 
     args = [
         DeclareLaunchArgument(
-            'com_port', default_value='/dev/ttyUSB0',
-            description='Gripper serial port.'),
+            "com_port", default_value="/dev/ttyUSB0", description="Gripper serial port."
+        ),
         DeclareLaunchArgument(
-            'use_fake_hardware', default_value='false',
-            description='Gripper ros2_control mock instead of real hardware.'),
+            "use_fake_hardware",
+            default_value="false",
+            description="Gripper ros2_control mock instead of real hardware.",
+        ),
         DeclareLaunchArgument(
-            'mount_x', default_value=str(TACTILE_MOUNT_X_M),
-            description='Pad lateral offset from its fingertip link [m] '
-                        '(negated for the left finger).'),
+            "mount_x",
+            default_value=str(TACTILE_MOUNT_X_M),
+            description="Pad lateral offset from its fingertip link [m] "
+            "(negated for the left finger).",
+        ),
         DeclareLaunchArgument(
-            'mount_z', default_value=str(TACTILE_MOUNT_Z_M),
-            description='Pad height along the finger from its fingertip '
-                        'link [m].'),
+            "mount_z",
+            default_value=str(TACTILE_MOUNT_Z_M),
+            description="Pad height along the finger from its fingertip " "link [m].",
+        ),
         DeclareLaunchArgument(
-            'left_tip_link', default_value='robotiq_85_left_finger_tip_link',
-            description='Parent link for the finger-0 pad frame.'),
+            "left_tip_link",
+            default_value="robotiq_85_left_finger_tip_link",
+            description="Parent link for the finger-0 pad frame.",
+        ),
         DeclareLaunchArgument(
-            'right_tip_link', default_value='robotiq_85_right_finger_tip_link',
-            description='Parent link for the finger-1 pad frame.'),
+            "right_tip_link",
+            default_value="robotiq_85_right_finger_tip_link",
+            description="Parent link for the finger-1 pad frame.",
+        ),
         DeclareLaunchArgument(
-            'rviz_config', default_value=default_rviz,
-            description='Combined gripper + tactile RViz config.'),
+            "rviz_config",
+            default_value=default_rviz,
+            description="Combined gripper + tactile RViz config.",
+        ),
         DeclareLaunchArgument(
-            'tactile_delay', default_value='8.0',
-            description='Seconds to wait before starting tactile_viz (and thus '
-                        'its baseline capture), so the gripper finishes its '
-                        'activation open/close and settles OPEN — pads clear — '
-                        'first. The driver streams from t=0 regardless.'),
+            "tactile_delay",
+            default_value="8.0",
+            description="Seconds to wait before starting tactile_viz (and thus "
+            "its baseline capture), so the gripper finishes its "
+            "activation open/close and settles OPEN — pads clear — "
+            "first. The driver streams from t=0 regardless.",
+        ),
     ]
 
     # Gripper: ros2_control + robot_state_publisher (its own RViz suppressed —
     # we run the combined one below).
     gripper = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([
-            FindPackageShare('robotiq_description'), 'launch',
-            'robotiq_control.launch.py'])),
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("robotiq_description"),
+                    "launch",
+                    "robotiq_control.launch.py",
+                ]
+            )
+        ),
         launch_arguments={
-            'com_port': com_port,
-            'use_fake_hardware': use_fake_hardware,
-            'launch_rviz': 'false',
+            "com_port": com_port,
+            "use_fake_hardware": use_fake_hardware,
+            "launch_rviz": "false",
         }.items(),
     )
 
@@ -93,49 +117,83 @@ def generate_launch_description():
     # Children of the finger_tip links, so
     # they follow the fingers as the gripper opens/closes.
     anchor_0 = Node(
-        package='tf2_ros', executable='static_transform_publisher',
-        name='finger_tip_to_tactile_finger_0',
-        arguments=['--x', PythonExpression(['-', LaunchConfiguration('mount_x')]),
-                   '--y', '0',
-                   '--z', LaunchConfiguration('mount_z'),
-                   '--frame-id', LaunchConfiguration('left_tip_link'),
-                   '--child-frame-id', 'tactile_finger_0'])
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="finger_tip_to_tactile_finger_0",
+        arguments=[
+            "--x",
+            PythonExpression(["-", LaunchConfiguration("mount_x")]),
+            "--y",
+            "0",
+            "--z",
+            LaunchConfiguration("mount_z"),
+            "--frame-id",
+            LaunchConfiguration("left_tip_link"),
+            "--child-frame-id",
+            "tactile_finger_0",
+        ],
+    )
     anchor_1 = Node(
-        package='tf2_ros', executable='static_transform_publisher',
-        name='finger_tip_to_tactile_finger_1',
-        arguments=['--x', LaunchConfiguration('mount_x'),
-                   '--y', '0',
-                   '--z', LaunchConfiguration('mount_z'),
-                   '--yaw', str(math.pi),
-                   '--frame-id', LaunchConfiguration('right_tip_link'),
-                   '--child-frame-id', 'tactile_finger_1'])
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="finger_tip_to_tactile_finger_1",
+        arguments=[
+            "--x",
+            LaunchConfiguration("mount_x"),
+            "--y",
+            "0",
+            "--z",
+            LaunchConfiguration("mount_z"),
+            "--yaw",
+            str(math.pi),
+            "--frame-id",
+            LaunchConfiguration("right_tip_link"),
+            "--child-frame-id",
+            "tactile_finger_1",
+        ],
+    )
 
     # Sensor driver (poller:= arg declared there).
     driver = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([
-            FindPackageShare('robotiq_tsf'), 'launch', 'tsf_driver.launch.py'])))
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [FindPackageShare("robotiq_tsf"), "launch", "tsf_driver.launch.py"]
+            )
+        )
+    )
 
     # publish_static_tfs:=false — render into the gripper-mounted tactile_finger_*
     # frames (from the anchors above) instead of the node's standalone frames.
     viz = Node(
-        package='robotiq_tsf', executable='tactile_viz_node',
-        name='tactile_viz', output='screen',
-        parameters=[{
-            'input_topic': 'TactileSensor/StaticData',
-            'publish_static_tfs': False,
-            'frame_id_finger_0': 'tactile_finger_0',
-            'frame_id_finger_1': 'tactile_finger_1',
-        }])
+        package="robotiq_tsf",
+        executable="tactile_viz_node",
+        name="tactile_viz",
+        output="screen",
+        parameters=[
+            {
+                "input_topic": "TactileSensor/StaticData",
+                "publish_static_tfs": False,
+                "frame_id_finger_0": "tactile_finger_0",
+                "frame_id_finger_1": "tactile_finger_1",
+            }
+        ],
+    )
 
     rviz = Node(
-        package='rviz2', executable='rviz2', name='rviz2', output='screen',
-        arguments=['-d', rviz_config])
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="screen",
+        arguments=["-d", rviz_config],
+    )
 
     # Delay tactile_viz so its baseline is captured AFTER the gripper's
     # activation open/close finishes (gripper settled open, pads clear).
     # The driver still starts at t=0, so the raw stream is available.
     viz_delayed = TimerAction(
-        period=LaunchConfiguration('tactile_delay'), actions=[viz])
+        period=LaunchConfiguration("tactile_delay"), actions=[viz]
+    )
 
     return LaunchDescription(
-        args + [gripper, anchor_0, anchor_1, driver, viz_delayed, rviz])
+        args + [gripper, anchor_0, anchor_1, driver, viz_delayed, rviz]
+    )
