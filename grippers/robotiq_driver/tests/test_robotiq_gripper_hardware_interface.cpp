@@ -26,6 +26,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <hardware_interface/resource_manager.hpp>
@@ -40,13 +41,11 @@
 namespace robotiq_driver::test
 {
 
-/**
- * This test generates a minimal xacro robot configuration and loads the
- * hardware interface plugin.
- */
-TEST(TestRobotiqGripperHardwareInterface, load_urdf)
+namespace
 {
-  std::string urdf =
+std::string minimal_robot_urdf()
+{
+  return
       R"(
         <?xml version="1.0" encoding="utf-8"?>
         <robot name="test_robot">
@@ -77,6 +76,16 @@ TEST(TestRobotiqGripperHardwareInterface, load_urdf)
           </ros2_control>
         </robot>
         )";
+}
+}  // namespace
+
+/**
+ * This test generates a minimal xacro robot configuration and loads the
+ * hardware interface plugin.
+ */
+TEST(TestRobotiqGripperHardwareInterface, load_urdf)
+{
+  const std::string urdf = minimal_robot_urdf();
 
   rclcpp::Node node{ "test_robotiq_gripper_hardware_interface" };
 
@@ -89,6 +98,30 @@ TEST(TestRobotiqGripperHardwareInterface, load_urdf)
 
   // Check interfaces
   EXPECT_EQ(1u, rm.system_components_size());
+}
+
+/**
+ * The controller configuration shipped in robotiq_description
+ * (robotiq_controllers.yaml) claims these command interfaces by name; if the
+ * hardware stops exporting them under these exact names the gripper controller
+ * fails to activate at runtime.
+ */
+TEST(TestRobotiqGripperHardwareInterface, exports_expected_command_interfaces)
+{
+  const std::string urdf = minimal_robot_urdf();
+
+  rclcpp::Node node{ "test_robotiq_gripper_hardware_interface" };
+
+#if HARDWARE_INTERFACE_VERSION_GTE(4, 13, 0)
+  hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
+#else
+  hardware_interface::ResourceManager rm(urdf);
+#endif
+
+  const auto keys = rm.command_interface_keys();
+  EXPECT_THAT(keys, testing::IsSupersetOf({ "robotiq_85_left_knuckle_joint/position",
+                                            "robotiq_85_left_knuckle_joint/set_gripper_max_velocity",
+                                            "robotiq_85_left_knuckle_joint/set_gripper_max_effort" }));
 }
 
 }  // namespace robotiq_driver::test
