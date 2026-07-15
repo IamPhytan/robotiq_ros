@@ -1,13 +1,13 @@
-# ament linters for the vendored gripper packages (grippers/).
-# Adapted from PickNik's ros2_robotiq_gripper CI: distribution -> jazzy,
-# runner -> ubuntu-24.04 (Noble), scoped to grippers/** so it only runs when
-# the vendored tree changes.
-name: ROS Lint (grippers)
+# ament linters for the C++ packages: the vendored gripper tree (grippers/) and
+# robotiq_tsf. Adapted from PickNik's ros2_robotiq_gripper CI: distribution ->
+# jazzy, runner -> ubuntu-24.04 (Noble).
+name: ROS Lint
 
 on:
   pull_request:
     paths:
       - "grippers/**"
+      - "robotiq_tsf/**"
       - ".github/workflows/ci-ros-lint.yml"
   workflow_dispatch:
 
@@ -31,6 +31,7 @@ jobs:
             robotiq_controllers
             robotiq_description
             robotiq_hardware_tests
+            robotiq_tsf
 
   ament_cpplint:
     name: ament_cpplint
@@ -52,3 +53,4 @@ jobs:
             robotiq_controllers
             robotiq_description
             robotiq_hardware_tests
+            robotiq_tsf
