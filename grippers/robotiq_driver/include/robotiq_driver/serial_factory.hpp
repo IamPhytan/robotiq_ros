@@ -34,8 +34,7 @@
 
 #include <hardware_interface/hardware_info.hpp>
 
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 /**
  * This factory is used to create and configure a Serial interface
  * implementation that is used by the driver to interact with the hardware.
@@ -49,7 +48,7 @@ namespace robotiq_driver
 class SerialFactory
 {
 public:
-  virtual std::unique_ptr<Serial> create(const hardware_interface::HardwareInfo& info) const = 0;
+   virtual std::unique_ptr<Serial> create(const hardware_interface::HardwareInfo& info) const = 0;
 };
 
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

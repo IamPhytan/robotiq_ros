@@ -39,35 +39,35 @@
  */
 class CommandLineUtility
 {
-  using LambdaWithValue = std::function<void(const char*)>;
-  using LambdaWithoutValue = std::function<void()>;
-  using ParameterHandler = std::variant<LambdaWithValue, LambdaWithoutValue>;
+   using LambdaWithValue = std::function<void(const char*)>;
+   using LambdaWithoutValue = std::function<void()>;
+   using ParameterHandler = std::variant<LambdaWithValue, LambdaWithoutValue>;
 
 public:
-  /**
-   * Assign to each command parameter a lambda function to handle it.
-   * @param parameter The parameter to handle.
-   * @param handler The lambda function to handle the parameter value.
-   * @param isMandatory True if the parameter is mandatory, else otherwise.
-   */
-  void registerHandler(const std::string& parameter, ParameterHandler handler, bool isMandatory = false);
+   /**
+    * Assign to each command parameter a lambda function to handle it.
+    * @param parameter The parameter to handle.
+    * @param handler The lambda function to handle the parameter value.
+    * @param isMandatory True if the parameter is mandatory, else otherwise.
+    */
+   void registerHandler(const std::string& parameter, ParameterHandler handler, bool isMandatory = false);
 
-  /**
-   * Parse the command line and read all parameters.
-   * @param argc The number of tokens in the command line.
-   * @param argv The list of tokens.
-   * @return True if the parsing is successful.
-   */
-  bool parse(int argc, char* argv[]);
+   /**
+    * Parse the command line and read all parameters.
+    * @param argc The number of tokens in the command line.
+    * @param argv The list of tokens.
+    * @return True if the parsing is successful.
+    */
+   bool parse(int argc, char* argv[]);
 
 private:
-  // Map that associates a lambda function to each parameter to process the expected value.
-  std::map<std::string, ParameterHandler> handlers;
+   // Map that associates a lambda function to each parameter to process the expected value.
+   std::map<std::string, ParameterHandler> handlers;
 
-  // Store all mandatory parameters.
-  std::set<std::string> mandatoryParams;
+   // Store all mandatory parameters.
+   std::set<std::string> mandatoryParams;
 
-  // Store the parameters which are parsed in the command line. If a parameter is mandatory,
-  // but cannot be found in the received  parameters, then print an error.
-  std::set<std::string> receivedParams;
+   // Store the parameters which are parsed in the command line. If a parameter is mandatory,
+   // but cannot be found in the received  parameters, then print an error.
+   std::set<std::string> receivedParams;
 };

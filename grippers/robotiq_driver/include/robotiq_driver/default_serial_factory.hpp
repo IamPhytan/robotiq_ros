@@ -34,25 +34,24 @@
 #include <robotiq_driver/default_serial_factory.hpp>
 #include <hardware_interface/hardware_info.hpp>
 
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 /**
  * This class is used to create a default driver to interact with the hardware.
  */
 class DefaultSerialFactory : public SerialFactory
 {
 public:
-  DefaultSerialFactory() = default;
+   DefaultSerialFactory() = default;
 
-  /**
-   * @brief Create a serial interface.
-   * @param info The hardware information.
-   * @return A sarial interface to communicate with the hardware.
-   */
-  std::unique_ptr<Serial> create(const hardware_interface::HardwareInfo& info) const;
+   /**
+    * @brief Create a serial interface.
+    * @param info The hardware information.
+    * @return A sarial interface to communicate with the hardware.
+    */
+   std::unique_ptr<Serial> create(const hardware_interface::HardwareInfo& info) const;
 
 protected:
-  // Seam for testing.
-  virtual std::unique_ptr<Serial> create_serial() const;
+   // Seam for testing.
+   virtual std::unique_ptr<Serial> create_serial() const;
 };
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

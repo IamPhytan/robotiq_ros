@@ -34,8 +34,7 @@
 
 #include <robotiq_driver/driver.hpp>
 
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 /**
  * The hardware interface internally uses a factory to create and configure a
  * driver to interact with the Robotiq Gripper.
@@ -48,6 +47,6 @@ namespace robotiq_driver
 class DriverFactory
 {
 public:
-  virtual std::unique_ptr<Driver> create(const hardware_interface::HardwareInfo& info) const = 0;
+   virtual std::unique_ptr<Driver> create(const hardware_interface::HardwareInfo& info) const = 0;
 };
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

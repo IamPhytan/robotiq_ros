@@ -34,24 +34,21 @@
 
 #include <hardware_interface/hardware_info.hpp>
 
-namespace robotiq_driver::test
-{
+namespace robotiq_driver::test {
 // This factory will populate the injected mock with data read form the HardwareInfo.
 class StubSerialFactory : public DefaultSerialFactory
 {
 public:
-  explicit StubSerialFactory(std::unique_ptr<MockSerial> serial) : serial_{ std::move(serial) }
-  {
-  }
+   explicit StubSerialFactory(std::unique_ptr<MockSerial> serial)
+      : serial_{std::move(serial)}
+   {
+   }
 
 protected:
-  std::unique_ptr<Serial> create_serial() const override
-  {
-    return std::move(serial_);
-  }
+   std::unique_ptr<Serial> create_serial() const override { return std::move(serial_); }
 
 private:
-  mutable std::unique_ptr<MockSerial> serial_;
+   mutable std::unique_ptr<MockSerial> serial_;
 };
 
 /**
@@ -59,19 +56,19 @@ private:
  */
 TEST(TestDefaultSerialFactory, create_with_default_parameters)
 {
-  hardware_interface::HardwareInfo info;
+   hardware_interface::HardwareInfo info;
 
-  auto serial = std::make_unique<MockSerial>();
+   auto serial = std::make_unique<MockSerial>();
 
-  // This line is only required when running the test inside the IDE.
-  testing::Mock::AllowLeak(serial.get());
+   // This line is only required when running the test inside the IDE.
+   testing::Mock::AllowLeak(serial.get());
 
-  EXPECT_CALL(*serial, set_port("/dev/ttyUSB0"));
-  EXPECT_CALL(*serial, set_baudrate(115200));
-  EXPECT_CALL(*serial, set_timeout(std::chrono::milliseconds{ 500 }));
+   EXPECT_CALL(*serial, set_port("/dev/ttyUSB0"));
+   EXPECT_CALL(*serial, set_baudrate(115200));
+   EXPECT_CALL(*serial, set_timeout(std::chrono::milliseconds{500}));
 
-  StubSerialFactory serial_factory(std::move(serial));
-  auto created_serial = serial_factory.create(info);
+   StubSerialFactory serial_factory(std::move(serial));
+   auto created_serial = serial_factory.create(info);
 }
 
 /**
@@ -79,21 +76,21 @@ TEST(TestDefaultSerialFactory, create_with_default_parameters)
  */
 TEST(TestDefaultSerialFactory, create_with_given_parameters)
 {
-  hardware_interface::HardwareInfo info;
-  info.hardware_parameters.emplace("COM_port", "/dev/ttyUSB1");
-  info.hardware_parameters.emplace("baudrate", "9600");
-  info.hardware_parameters.emplace("timeout", "0.1");
+   hardware_interface::HardwareInfo info;
+   info.hardware_parameters.emplace("COM_port", "/dev/ttyUSB1");
+   info.hardware_parameters.emplace("baudrate", "9600");
+   info.hardware_parameters.emplace("timeout", "0.1");
 
-  auto serial = std::make_unique<MockSerial>();
+   auto serial = std::make_unique<MockSerial>();
 
-  // This line is only required when running the test inside the IDE.
-  testing::Mock::AllowLeak(serial.get());
+   // This line is only required when running the test inside the IDE.
+   testing::Mock::AllowLeak(serial.get());
 
-  EXPECT_CALL(*serial, set_port("/dev/ttyUSB1"));
-  EXPECT_CALL(*serial, set_baudrate(9600));
-  EXPECT_CALL(*serial, set_timeout(std::chrono::milliseconds(100)));
+   EXPECT_CALL(*serial, set_port("/dev/ttyUSB1"));
+   EXPECT_CALL(*serial, set_baudrate(9600));
+   EXPECT_CALL(*serial, set_timeout(std::chrono::milliseconds(100)));
 
-  StubSerialFactory serial_factory(std::move(serial));
-  auto created_serial = serial_factory.create(info);
+   StubSerialFactory serial_factory(std::move(serial));
+   auto created_serial = serial_factory.create(info);
 }
-}  // namespace robotiq_driver::test
+} // namespace robotiq_driver::test

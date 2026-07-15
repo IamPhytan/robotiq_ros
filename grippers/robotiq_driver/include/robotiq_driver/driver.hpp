@@ -33,89 +33,88 @@
 /**
  * @brief This interface describes how to communicate with the gripper hardware.
  */
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 class Driver
 {
 public:
-  enum class ActivationStatus
-  {
-    RESET,
-    ACTIVE
-  };
+   enum class ActivationStatus
+   {
+      RESET,
+      ACTIVE
+   };
 
-  enum class ActionStatus
-  {
-    STOPPED,
-    MOVING
-  };
+   enum class ActionStatus
+   {
+      STOPPED,
+      MOVING
+   };
 
-  enum class GripperStatus
-  {
-    RESET,
-    IN_PROGRESS,
-    COMPLETED,
-  };
+   enum class GripperStatus
+   {
+      RESET,
+      IN_PROGRESS,
+      COMPLETED,
+   };
 
-  enum class ObjectDetectionStatus
-  {
-    MOVING,
-    OBJECT_DETECTED_OPENING,
-    OBJECT_DETECTED_CLOSING,
-    AT_REQUESTED_POSITION
-  };
+   enum class ObjectDetectionStatus
+   {
+      MOVING,
+      OBJECT_DETECTED_OPENING,
+      OBJECT_DETECTED_CLOSING,
+      AT_REQUESTED_POSITION
+   };
 
-  virtual void set_slave_address(uint8_t slave_address) = 0;
+   virtual void set_slave_address(uint8_t slave_address) = 0;
 
-  /** Connect to the gripper serial connection. */
-  virtual bool connect() = 0;
+   /** Connect to the gripper serial connection. */
+   virtual bool connect() = 0;
 
-  /** Disconnect from the gripper serial connection. */
-  virtual void disconnect() = 0;
+   /** Disconnect from the gripper serial connection. */
+   virtual void disconnect() = 0;
 
-  /**
-   * @brief Activates the gripper.
-   * @throw serial::IOException on failure to successfully communicate with gripper port
-   */
-  virtual void activate() = 0;
+   /**
+    * @brief Activates the gripper.
+    * @throw serial::IOException on failure to successfully communicate with gripper port
+    */
+   virtual void activate() = 0;
 
-  /**
-   * @brief Deactivates the gripper.
-   * @throw serial::IOException on failure to successfully communicate with gripper port
-   */
-  virtual void deactivate() = 0;
+   /**
+    * @brief Deactivates the gripper.
+    * @throw serial::IOException on failure to successfully communicate with gripper port
+    */
+   virtual void deactivate() = 0;
 
-  /**
-   * @brief Commands the gripper to move to the desired position.
-   * @param pos A value between 0x00 (fully open) and 0xFF (fully closed).
-   */
-  virtual void set_gripper_position(uint8_t pos) = 0;
+   /**
+    * @brief Commands the gripper to move to the desired position.
+    * @param pos A value between 0x00 (fully open) and 0xFF (fully closed).
+    */
+   virtual void set_gripper_position(uint8_t pos) = 0;
 
-  /**
-   * @brief Return the current position of the gripper.
-   *
-   * @throw serial::IOException on failure to successfully communicate with gripper port
-   *
-   * @return uint8_t A value between 0x00 (fully open) and 0xFF (fully closed).
-   */
-  virtual uint8_t get_gripper_position() = 0;
+   /**
+    * @brief Return the current position of the gripper.
+    *
+    * @throw serial::IOException on failure to successfully communicate with gripper port
+    *
+    * @return uint8_t A value between 0x00 (fully open) and 0xFF (fully closed).
+    */
+   virtual uint8_t get_gripper_position() = 0;
 
-  /**
-   * @brief Returns true if the gripper is currently moving, false otherwise.
-   */
-  virtual bool gripper_is_moving() = 0;
+   /**
+    * @brief Returns true if the gripper is currently moving, false otherwise.
+    */
+   virtual bool gripper_is_moving() = 0;
 
-  /**
-   * @brief Set the speed of the gripper.
-   *
-   * @param speed A value between 0x00 (stopped) and 0xFF (full speed).
-   */
-  virtual void set_speed(uint8_t speed) = 0;
+   /**
+    * @brief Set the speed of the gripper.
+    *
+    * @param speed A value between 0x00 (stopped) and 0xFF (full speed).
+    */
+   virtual void set_speed(uint8_t speed) = 0;
 
-  /**
-   * @brief Set how forcefully the gripper opens or closes.
-   * @param force A value between 0x00 (no force) or 0xFF (maximum force).
-   */
-  virtual void set_force(uint8_t force) = 0;
+   /**
+    * @brief Set how forcefully the gripper opens or closes.
+    * @param force A value between 0x00 (no force) or 0xFF (maximum force).
+    */
+   virtual void set_force(uint8_t force) = 0;
 };
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

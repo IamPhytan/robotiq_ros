@@ -28,102 +28,103 @@
 
 #include "robotiq_controllers/robotiq_activation_controller.hpp"
 
-namespace robotiq_controllers
-{
+namespace robotiq_controllers {
 controller_interface::InterfaceConfiguration RobotiqActivationController::command_interface_configuration() const
 {
-  controller_interface::InterfaceConfiguration config;
-  config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+   controller_interface::InterfaceConfiguration config;
+   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
 
-  config.names.emplace_back("reactivate_gripper/reactivate_gripper_cmd");
-  config.names.emplace_back("reactivate_gripper/reactivate_gripper_response");
+   config.names.emplace_back("reactivate_gripper/reactivate_gripper_cmd");
+   config.names.emplace_back("reactivate_gripper/reactivate_gripper_response");
 
-  return config;
+   return config;
 }
 
 controller_interface::InterfaceConfiguration RobotiqActivationController::state_interface_configuration() const
 {
-  controller_interface::InterfaceConfiguration config;
-  config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+   controller_interface::InterfaceConfiguration config;
+   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
 
-  return config;
+   return config;
 }
 
 controller_interface::return_type RobotiqActivationController::update(const rclcpp::Time& /*time*/,
                                                                       const rclcpp::Duration& /*period*/)
 {
-  return controller_interface::return_type::OK;
+   return controller_interface::return_type::OK;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-RobotiqActivationController::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqActivationController::on_activate(
+   const rclcpp_lifecycle::State& /*previous_state*/)
 {
-  // Check command interfaces.
-  if (command_interfaces_.size() != 2)
-  {
-    RCLCPP_ERROR(get_node()->get_logger(), "Expected %d command interfaces, but got %zu.", 2,
-                 command_interfaces_.size());
-    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
-  }
+   // Check command interfaces.
+   if(command_interfaces_.size() != 2)
+   {
+      RCLCPP_ERROR(get_node()->get_logger(),
+                   "Expected %d command interfaces, but got %zu.",
+                   2,
+                   command_interfaces_.size());
+      return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+   }
 
-  try
-  {
-    // Create service for re-activating the gripper.
-    reactivate_gripper_srv_ = get_node()->create_service<std_srvs::srv::Trigger>(
-        "~/reactivate_gripper",
-        [this](std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr resp) {
-          this->reactivateGripper(req, resp);
-        });
-  }
-  catch (...)
-  {
-    return LifecycleNodeInterface::CallbackReturn::ERROR;
-  }
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+   try
+   {
+      // Create service for re-activating the gripper.
+      reactivate_gripper_srv_ = get_node()->create_service<std_srvs::srv::Trigger>(
+         "~/reactivate_gripper",
+         [this](std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr resp) {
+            this->reactivateGripper(req, resp);
+         });
+   }
+   catch(...)
+   {
+      return LifecycleNodeInterface::CallbackReturn::ERROR;
+   }
+   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-RobotiqActivationController::on_deactivate(const rclcpp_lifecycle::State& /*previous_state*/)
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqActivationController::on_deactivate(
+   const rclcpp_lifecycle::State& /*previous_state*/)
 {
-  try
-  {
-    reactivate_gripper_srv_.reset();
-  }
-  catch (...)
-  {
-    return LifecycleNodeInterface::CallbackReturn::ERROR;
-  }
+   try
+   {
+      reactivate_gripper_srv_.reset();
+   }
+   catch(...)
+   {
+      return LifecycleNodeInterface::CallbackReturn::ERROR;
+   }
 
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqActivationController::on_init()
 {
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 bool RobotiqActivationController::reactivateGripper(std_srvs::srv::Trigger::Request::SharedPtr /*req*/,
                                                     std_srvs::srv::Trigger::Response::SharedPtr resp)
 {
-  resp->success = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].set_value(ASYNC_WAITING);
-  resp->success &= command_interfaces_[REACTIVATE_GRIPPER_CMD].set_value(1.0);
+   resp->success = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].set_value(ASYNC_WAITING);
+   resp->success &= command_interfaces_[REACTIVATE_GRIPPER_CMD].set_value(1.0);
 
-  while (true)
-  {
-    const auto maybe_value = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional();
-    if (maybe_value && maybe_value.value() != ASYNC_WAITING)
-    {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-  // NOTE: This was previously using get_value() and implicitly casting to bool, so keeping the old behavior.
-  // However, note that the value of this result is actually a double, so this should be revised in the future.
-  resp->success &= static_cast<bool>(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional().value_or(false));
+   while(true)
+   {
+      const auto maybe_value = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional();
+      if(maybe_value && maybe_value.value() != ASYNC_WAITING)
+      {
+         break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+   }
+   // NOTE: This was previously using get_value() and implicitly casting to bool, so keeping the old behavior.
+   // However, note that the value of this result is actually a double, so this should be revised in the future.
+   resp->success &= static_cast<bool>(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional().value_or(false));
 
-  return resp->success;
+   return resp->success;
 }
-}  // namespace robotiq_controllers
+} // namespace robotiq_controllers
 
 #include "pluginlib/class_list_macros.hpp"
 
