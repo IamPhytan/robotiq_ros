@@ -1,3 +1,31 @@
+// Copyright (c) 2026 Robotiq
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//    * Redistributions of source code must retain the above copyright
+//      notice, this list of conditions and the following disclaimer.
+//
+//    * Redistributions in binary form must reproduce the above copyright
+//      notice, this list of conditions and the following disclaimer in the
+//      documentation and/or other materials provided with the distribution.
+//
+//    * Neither the name of the copyright holder nor the names of its
+//      contributors may be used to endorse or promote products derived from
+//      this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
 /******************************************************************************************
 //PollData V4.0 : Package for the new tactile sensor as per date of October 12th 2016
 //Author: Jean-Philippe Roberge Ing, M.Sc.A.
@@ -67,9 +95,31 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 //                                  before.
 ******************************************************************************************/
 
+#include <fcntl.h>
+#include <glob.h>
+#include <math.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <array>
+#include <cerrno>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "robotiq_tsf/MadgwickAHRS.h"
 #include "robotiq_tsf/msg/accelerometer.hpp"
 #include "robotiq_tsf/msg/dynamic.hpp"
 #include "robotiq_tsf/msg/euler_angle.hpp"
@@ -79,31 +129,10 @@ rosrun tactilesensors PollData [-device PATH_TO_DEV]
 #include "robotiq_tsf/msg/static_data.hpp"
 #include "robotiq_tsf/msg/timestamp.hpp"
 #include "robotiq_tsf/srv/tactile_sensors.hpp"
-#include "robotiq_tsf/MadgwickAHRS.h"
 
-#include <algorithm>
-#include <array>
-#include <cerrno>
-#include <chrono>
-#include <cmath>
-#include <cstring>
-#include <fcntl.h>
-#include <fstream>
-#include <glob.h>
-#include <math.h>
-#include <memory>
-#include <stdio.h>
-#include <string>
-#include <sys/ioctl.h>
-#include <sys/time.h>
-#include <termios.h>
-#include <thread>
-#include <unistd.h>
-#include <vector>
-#include <strings.h>
-
-// Using std namespace
-using namespace std;
+// Legacy translation unit: keep the file-scope std using-directive rather than
+// sprinkling using-declarations through 1000+ lines of pre-existing code.
+using namespace std; // NOLINT(build/namespaces)
 
 #define NODE_LOGGER (g_node ? g_node->get_logger() : rclcpp::get_logger("poll_data4"))
 
@@ -706,24 +735,24 @@ bool OpenAndConfigurePort(int* USB, char const* TheDevice)
 
 static void usbSend(int* USB, UsbPacket* packet)
 {
-   uint8_t* p = (uint8_t*)packet;
+   uint8_t* p = reinterpret_cast<uint8_t*>(packet);
    int n_written;
 
    packet->start_byte = USB_PACKET_START_BYTE;
    packet->crc8 = calcCrc8(p + 2, packet->data_length + 2);
 
-   n_written = write((*USB), (char*)p, packet->data_length + 4);
+   n_written = write((*USB), reinterpret_cast<char*>(p), packet->data_length + 4);
 }
 
 static uint8_t calcCrc8(uint8_t* data, size_t len)
 {
-   // TODO: calculate CRC8
+   // TODO(robotiq): calculate CRC8
    return data[-1];
 }
 
 static bool usbReadByte(UsbPacket* packet, unsigned int* readSoFar, uint8_t d)
 {
-   uint8_t* p = (uint8_t*)packet;
+   uint8_t* p = reinterpret_cast<uint8_t*>(packet);
 
    // Make sure start byte is seen
    if(*readSoFar == 0 && d != USB_PACKET_START_BYTE)
@@ -783,7 +812,7 @@ static void parseSensors(UsbPacket* packet, Fingers* fingers)
       switch(sensorType)
       {
       case USB_SENSOR_TYPE_DYNAMIC_TACTILE:
-         i += extractUint16((uint16_t*)fingers->finger[f].dynamicTactile,
+         i += extractUint16(reinterpret_cast<uint16_t*>(fingers->finger[f].dynamicTactile),
                             FINGER_DYNAMIC_TACTILE_COUNT,
                             sensorData,
                             sensorDataBytes);
@@ -794,15 +823,19 @@ static void parseSensors(UsbPacket* packet, Fingers* fingers)
          fingers->finger[f].newDataAvailable = true;
          break;
       case USB_SENSOR_TYPE_ACCELEROMETER:
-         i += extractUint16((uint16_t*)fingers->finger[f].accelerometer, 3, sensorData, sensorDataBytes);
+         i += extractUint16(reinterpret_cast<uint16_t*>(fingers->finger[f].accelerometer),
+                            3,
+                            sensorData,
+                            sensorDataBytes);
          fingers->finger[f].newDataAvailable = true;
          break;
       case USB_SENSOR_TYPE_GYROSCOPE:
-         i += extractUint16((uint16_t*)fingers->finger[f].gyroscope, 3, sensorData, sensorDataBytes);
+         i += extractUint16(reinterpret_cast<uint16_t*>(fingers->finger[f].gyroscope), 3, sensorData, sensorDataBytes);
          fingers->finger[f].newDataAvailable = true;
          break;
       case USB_SENSOR_TYPE_TEMPERATURE:
-         i += extractUint16((uint16_t*)&fingers->finger[f].temperature, 1, sensorData, sensorDataBytes);
+         i +=
+            extractUint16(reinterpret_cast<uint16_t*>(&fingers->finger[f].temperature), 1, sensorData, sensorDataBytes);
          fingers->finger[f].newDataAvailable = true;
          break;
       case USB_SENSOR_TYPE_TIMESTAMP:
