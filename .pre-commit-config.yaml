@@ -1,0 +1,23 @@
+# Repo-wide clang-format enforcement.
+#
+# The single .clang-format at the repo root (shared Robotiq C++ style) is the sole
+# source of truth for C/C++ formatting across every package; clang-format walks
+# up per-file and picks it up. Pinned to v19.1.1 to match the clang-format-19
+# mandated by the Robotiq C++ conventions.
+#
+# grippers/.pre-commit-config.yaml carries the vendored tree's remaining hooks
+# (black, flake8, codespell, whitespace); C/C++ formatting lives here so the
+# whole repo shares one style.
+#
+# To use locally:
+#
+#     pre-commit run -a
+#
+repos:
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.1
+    hooks:
+      - id: clang-format
+        files: \.(c|cc|cxx|cpp|h|hh|hpp|hxx|ipp)$
+        # -i arg is included by default by the hook
+        args: ["-fallback-style=none"]

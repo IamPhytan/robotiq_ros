@@ -42,7 +42,11 @@ jobs:
         with:
           distribution: jazzy
           linter: cpplint
-          arguments: "--linelength=121 --filter=-whitespace/newline"
+          # -whitespace/newline and -whitespace/comments: clang-format is the
+          # C++ formatting authority; suppress the cpplint checks it disagrees
+          # with (Allman newlines; 1 space before trailing comments /
+          # namespace-closing comments vs cpplint's 2).
+          arguments: "--linelength=121 --filter=-whitespace/newline,-whitespace/comments"
           package-name: >-
             robotiq_driver
             robotiq_controllers
