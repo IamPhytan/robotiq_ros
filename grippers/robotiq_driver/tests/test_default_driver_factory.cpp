@@ -34,24 +34,24 @@
 
 #include <hardware_interface/hardware_info.hpp>
 
-namespace robotiq_driver::test
-{
+namespace robotiq_driver::test {
 // This factory will populate the injected mock with data read form the HardwareInfo.
 class TestDriverFactory : public DefaultDriverFactory
 {
 public:
-  explicit TestDriverFactory(std::unique_ptr<Driver> driver) : driver_{ std::move(driver) }
-  {
-  }
+   explicit TestDriverFactory(std::unique_ptr<Driver> driver)
+      : driver_{std::move(driver)}
+   {
+   }
 
 protected:
-  std::unique_ptr<Driver> create_driver([[maybe_unused]] const hardware_interface::HardwareInfo& info) const override
-  {
-    return std::move(driver_);
-  }
+   std::unique_ptr<Driver> create_driver([[maybe_unused]] const hardware_interface::HardwareInfo& info) const override
+   {
+      return std::move(driver_);
+   }
 
 private:
-  mutable std::unique_ptr<Driver> driver_;
+   mutable std::unique_ptr<Driver> driver_;
 };
 
 /**
@@ -59,23 +59,23 @@ private:
  */
 TEST(TestDefaultDriverFactory, create_with_default_parameters)
 {
-  hardware_interface::HardwareInfo info;
+   hardware_interface::HardwareInfo info;
 
-  auto driver = std::make_unique<MockDriver>();
+   auto driver = std::make_unique<MockDriver>();
 
-  // This line is only required when running the test inside the IDE.
-  testing::Mock::AllowLeak(driver.get());
+   // This line is only required when running the test inside the IDE.
+   testing::Mock::AllowLeak(driver.get());
 
-  EXPECT_CALL(*driver, set_slave_address(0x9));
-  EXPECT_CALL(*driver, set_speed(0xFF));
-  EXPECT_CALL(*driver, set_force(0xFF));
-  EXPECT_CALL(*driver, connect()).Times(0);
-  EXPECT_CALL(*driver, disconnect()).Times(0);
-  EXPECT_CALL(*driver, activate()).Times(0);
-  EXPECT_CALL(*driver, deactivate()).Times(0);
+   EXPECT_CALL(*driver, set_slave_address(0x9));
+   EXPECT_CALL(*driver, set_speed(0xFF));
+   EXPECT_CALL(*driver, set_force(0xFF));
+   EXPECT_CALL(*driver, connect()).Times(0);
+   EXPECT_CALL(*driver, disconnect()).Times(0);
+   EXPECT_CALL(*driver, activate()).Times(0);
+   EXPECT_CALL(*driver, deactivate()).Times(0);
 
-  TestDriverFactory driver_factory{ std::move(driver) };
-  auto created_driver = driver_factory.create(info);
+   TestDriverFactory driver_factory{std::move(driver)};
+   auto created_driver = driver_factory.create(info);
 }
 
 /**
@@ -83,26 +83,26 @@ TEST(TestDefaultDriverFactory, create_with_default_parameters)
  */
 TEST(TestDefaultDriverFactory, create_with_given_parameters)
 {
-  hardware_interface::HardwareInfo info;
+   hardware_interface::HardwareInfo info;
 
-  info.hardware_parameters.emplace("slave_address", "1");
-  info.hardware_parameters.emplace("gripper_speed_multiplier", "0.5");
-  info.hardware_parameters.emplace("gripper_force_multiplier", "0.5");
+   info.hardware_parameters.emplace("slave_address", "1");
+   info.hardware_parameters.emplace("gripper_speed_multiplier", "0.5");
+   info.hardware_parameters.emplace("gripper_force_multiplier", "0.5");
 
-  auto driver = std::make_unique<MockDriver>();
+   auto driver = std::make_unique<MockDriver>();
 
-  // This line is only required when running the test inside the IDE.
-  testing::Mock::AllowLeak(driver.get());
+   // This line is only required when running the test inside the IDE.
+   testing::Mock::AllowLeak(driver.get());
 
-  EXPECT_CALL(*driver, set_slave_address(0x1));
-  EXPECT_CALL(*driver, set_speed(0x7F));
-  EXPECT_CALL(*driver, set_force(0x7F));
-  EXPECT_CALL(*driver, connect()).Times(0);
-  EXPECT_CALL(*driver, disconnect()).Times(0);
-  EXPECT_CALL(*driver, activate()).Times(0);
-  EXPECT_CALL(*driver, deactivate()).Times(0);
+   EXPECT_CALL(*driver, set_slave_address(0x1));
+   EXPECT_CALL(*driver, set_speed(0x7F));
+   EXPECT_CALL(*driver, set_force(0x7F));
+   EXPECT_CALL(*driver, connect()).Times(0);
+   EXPECT_CALL(*driver, disconnect()).Times(0);
+   EXPECT_CALL(*driver, activate()).Times(0);
+   EXPECT_CALL(*driver, deactivate()).Times(0);
 
-  TestDriverFactory driver_factory{ std::move(driver) };
-  auto created_driver = driver_factory.create(info);
+   TestDriverFactory driver_factory{std::move(driver)};
+   auto created_driver = driver_factory.create(info);
 }
-}  // namespace robotiq_driver::test
+} // namespace robotiq_driver::test

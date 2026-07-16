@@ -40,86 +40,85 @@
  * the gripper's current state.
  *
  */
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 class DefaultDriver : public Driver
 {
 public:
-  explicit DefaultDriver(std::unique_ptr<Serial> serial);
+   explicit DefaultDriver(std::unique_ptr<Serial> serial);
 
-  bool connect() override;
-  void disconnect() override;
+   bool connect() override;
+   void disconnect() override;
 
-  void set_slave_address(uint8_t slave_address) override;
+   void set_slave_address(uint8_t slave_address) override;
 
-  /** Activate the gripper with the specified operation mode and parameters. */
-  void activate() override;
+   /** Activate the gripper with the specified operation mode and parameters. */
+   void activate() override;
 
-  /** Deactivate the gripper. */
-  void deactivate() override;
+   /** Deactivate the gripper. */
+   void deactivate() override;
 
-  /**
-   * @brief Commands the gripper to move to the desired position.
-   * @param pos A value between 0x00 (fully open) and 0xFF (fully closed).
-   */
-  void set_gripper_position(uint8_t pos) override;
+   /**
+    * @brief Commands the gripper to move to the desired position.
+    * @param pos A value between 0x00 (fully open) and 0xFF (fully closed).
+    */
+   void set_gripper_position(uint8_t pos) override;
 
-  /**
-   * @brief Return the current position of the gripper.
-   * @throw serial::IOException on failure to successfully communicate with gripper port
-   * @return uint8_t A value between 0x00 (fully open) and 0xFF (fully closed).
-   */
-  uint8_t get_gripper_position() override;
+   /**
+    * @brief Return the current position of the gripper.
+    * @throw serial::IOException on failure to successfully communicate with gripper port
+    * @return uint8_t A value between 0x00 (fully open) and 0xFF (fully closed).
+    */
+   uint8_t get_gripper_position() override;
 
-  /**
-   * @brief Returns true if the gripper is currently moving, false otherwise.
-   *
-   */
-  bool gripper_is_moving() override;
+   /**
+    * @brief Returns true if the gripper is currently moving, false otherwise.
+    *
+    */
+   bool gripper_is_moving() override;
 
-  /**
-   * @brief Set the speed of the gripper.
-   * @param speed A value between 0x00 (stopped) and 0xFF (full speed).
-   */
-  void set_speed(uint8_t speed) override;
+   /**
+    * @brief Set the speed of the gripper.
+    * @param speed A value between 0x00 (stopped) and 0xFF (full speed).
+    */
+   void set_speed(uint8_t speed) override;
 
-  /**
-   * @brief Set how forcefully the gripper opens or closes.
-   * @param force A value between 0x00 (no force) or 0xFF (maximum force).
-   */
-  void set_force(uint8_t force) override;
+   /**
+    * @brief Set how forcefully the gripper opens or closes.
+    * @param force A value between 0x00 (no force) or 0xFF (maximum force).
+    */
+   void set_force(uint8_t force) override;
 
 private:
-  /**
-   * With this command we send a request and wait for a response of given size.
-   * Behind the scene, if the response is not received, the software makes an attempt
-   * to resend the command up to 5 times before returning an empty response.
-   * @param request The command request.
-   * @param response_size The response expected size.
-   * @return The response or an empty vector if an en error occurred.
-   */
-  std::vector<uint8_t> send(const std::vector<uint8_t>& request, size_t response_size) const;
+   /**
+    * With this command we send a request and wait for a response of given size.
+    * Behind the scene, if the response is not received, the software makes an attempt
+    * to resend the command up to 5 times before returning an empty response.
+    * @param request The command request.
+    * @param response_size The response expected size.
+    * @return The response or an empty vector if an en error occurred.
+    */
+   std::vector<uint8_t> send(const std::vector<uint8_t>& request, size_t response_size) const;
 
-  std::vector<uint8_t> create_read_command(uint16_t first_register, uint8_t num_registers);
-  std::vector<uint8_t> create_write_command(uint16_t first_register, const std::vector<uint16_t>& data);
+   std::vector<uint8_t> create_read_command(uint16_t first_register, uint8_t num_registers);
+   std::vector<uint8_t> create_write_command(uint16_t first_register, const std::vector<uint16_t>& data);
 
-  /**
-   * @brief Read the current status of the gripper, and update member variables as appropriate.
-   *
-   * @throw serial::IOException on failure to successfully communicate with gripper port
-   */
-  void update_status();
+   /**
+    * @brief Read the current status of the gripper, and update member variables as appropriate.
+    *
+    * @throw serial::IOException on failure to successfully communicate with gripper port
+    */
+   void update_status();
 
-  std::unique_ptr<Serial> serial_ = nullptr;
-  uint8_t slave_address_;
+   std::unique_ptr<Serial> serial_ = nullptr;
+   uint8_t slave_address_;
 
-  ActivationStatus activation_status_;
-  ActionStatus action_status_;
-  GripperStatus gripper_status_;
-  ObjectDetectionStatus object_detection_status_;
+   ActivationStatus activation_status_;
+   ActionStatus action_status_;
+   GripperStatus gripper_status_;
+   ObjectDetectionStatus object_detection_status_;
 
-  uint8_t gripper_position_;
-  uint8_t commanded_gripper_speed_;
-  uint8_t commanded_gripper_force_;
+   uint8_t gripper_position_;
+   uint8_t commanded_gripper_speed_;
+   uint8_t commanded_gripper_force_;
 };
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

@@ -30,66 +30,65 @@
 
 #include <rclcpp/logging.hpp>
 
-namespace robotiq_driver
-{
+namespace robotiq_driver {
 const auto kLogger = rclcpp::get_logger("FakeDriver");
 
 void FakeDriver::set_slave_address(uint8_t slave_address)
 {
-  slave_address_ = slave_address;
-  RCLCPP_INFO(kLogger, "slave_address set to: %d", slave_address);
+   slave_address_ = slave_address;
+   RCLCPP_INFO(kLogger, "slave_address set to: %d", slave_address);
 }
 
 bool FakeDriver::connect()
 {
-  connected_ = true;
-  RCLCPP_INFO(kLogger, "Gripper connected.");
-  return true;
+   connected_ = true;
+   RCLCPP_INFO(kLogger, "Gripper connected.");
+   return true;
 }
 
 void FakeDriver::disconnect()
 {
-  RCLCPP_INFO(kLogger, "Gripper disconnected.");
-  connected_ = false;
+   RCLCPP_INFO(kLogger, "Gripper disconnected.");
+   connected_ = false;
 }
 
 void FakeDriver::activate()
 {
-  RCLCPP_INFO(kLogger, "Gripper activated.");
-  activated_ = true;
+   RCLCPP_INFO(kLogger, "Gripper activated.");
+   activated_ = true;
 }
 
 void FakeDriver::deactivate()
 {
-  RCLCPP_INFO(kLogger, "Gripper deactivated.");
-  activated_ = false;
+   RCLCPP_INFO(kLogger, "Gripper deactivated.");
+   activated_ = false;
 }
 
 void FakeDriver::set_gripper_position(uint8_t position)
 {
-  position_ = position;
+   position_ = position;
 }
 
 uint8_t FakeDriver::get_gripper_position()
 {
-  return position_;
+   return position_;
 }
 
 bool FakeDriver::gripper_is_moving()
 {
-  return gripper_is_moving_;
+   return gripper_is_moving_;
 }
 
 void FakeDriver::set_speed(uint8_t speed)
 {
-  RCLCPP_INFO(kLogger, "Set gripper speed.");
-  speed_ = speed;
+   RCLCPP_INFO(kLogger, "Set gripper speed.");
+   speed_ = speed;
 }
 
 void FakeDriver::set_force(uint8_t force)
 {
-  RCLCPP_INFO(kLogger, "Set gripper force.");
-  force_ = force;
+   RCLCPP_INFO(kLogger, "Set gripper force.");
+   force_ = force;
 }
 
-}  // namespace robotiq_driver
+} // namespace robotiq_driver

@@ -1,8 +1,8 @@
 echo "=========================================="
-echo "Tactile Sensor Insatll"
+echo "Tactile Sensor Install"
 echo "=========================================="
 echo ""
-echo "Gives permissions and creates symlink used in ros pacakges"
+echo "Gives permissions and creates symlink used in ros packages"
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

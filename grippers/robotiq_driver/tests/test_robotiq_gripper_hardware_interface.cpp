@@ -38,14 +38,12 @@
 
 #include <rclcpp/node.hpp>
 
-namespace robotiq_driver::test
-{
+namespace robotiq_driver::test {
 
-namespace
-{
+namespace {
 std::string minimal_robot_urdf()
 {
-  return
+   return
       R"(
         <?xml version="1.0" encoding="utf-8"?>
         <robot name="test_robot">
@@ -77,7 +75,7 @@ std::string minimal_robot_urdf()
         </robot>
         )";
 }
-}  // namespace
+} // namespace
 
 /**
  * This test generates a minimal xacro robot configuration and loads the
@@ -85,19 +83,19 @@ std::string minimal_robot_urdf()
  */
 TEST(TestRobotiqGripperHardwareInterface, load_urdf)
 {
-  const std::string urdf = minimal_robot_urdf();
+   const std::string urdf = minimal_robot_urdf();
 
-  rclcpp::Node node{ "test_robotiq_gripper_hardware_interface" };
+   rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
 
 #if HARDWARE_INTERFACE_VERSION_GTE(4, 13, 0)
-  // Initialize the resource manager
-  hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
+   // Initialize the resource manager
+   hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
 #else
-  hardware_interface::ResourceManager rm(urdf);
+   hardware_interface::ResourceManager rm(urdf);
 #endif
 
-  // Check interfaces
-  EXPECT_EQ(1u, rm.system_components_size());
+   // Check interfaces
+   EXPECT_EQ(1u, rm.system_components_size());
 }
 
 /**
@@ -108,27 +106,28 @@ TEST(TestRobotiqGripperHardwareInterface, load_urdf)
  */
 TEST(TestRobotiqGripperHardwareInterface, exports_expected_command_interfaces)
 {
-  const std::string urdf = minimal_robot_urdf();
+   const std::string urdf = minimal_robot_urdf();
 
-  rclcpp::Node node{ "test_robotiq_gripper_hardware_interface" };
+   rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
 
 #if HARDWARE_INTERFACE_VERSION_GTE(4, 13, 0)
-  hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
+   hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
 #else
-  hardware_interface::ResourceManager rm(urdf);
+   hardware_interface::ResourceManager rm(urdf);
 #endif
 
-  const auto keys = rm.command_interface_keys();
-  EXPECT_THAT(keys, testing::IsSupersetOf({ "robotiq_85_left_knuckle_joint/position",
-                                            "robotiq_85_left_knuckle_joint/set_gripper_max_velocity",
-                                            "robotiq_85_left_knuckle_joint/set_gripper_max_effort" }));
+   const auto keys = rm.command_interface_keys();
+   EXPECT_THAT(keys,
+               testing::IsSupersetOf({"robotiq_85_left_knuckle_joint/position",
+                                      "robotiq_85_left_knuckle_joint/set_gripper_max_velocity",
+                                      "robotiq_85_left_knuckle_joint/set_gripper_max_effort"}));
 }
 
-}  // namespace robotiq_driver::test
+} // namespace robotiq_driver::test
 
 int main(int argc, char** argv)
 {
-  rclcpp::init(argc, argv);
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+   rclcpp::init(argc, argv);
+   testing::InitGoogleTest(&argc, argv);
+   return RUN_ALL_TESTS();
 }

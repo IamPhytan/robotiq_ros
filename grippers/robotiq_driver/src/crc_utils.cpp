@@ -30,8 +30,7 @@
 
 #include <robotiq_driver/crc_utils.hpp>
 
-namespace robotiq_driver::crc_utils
-{
+namespace robotiq_driver::crc_utils {
 /**
  * Following are the tables for the CRC-16 MODBUS protocol. This particular CRC
  * is commonly used in the Modbus RTU serial communications protocol, which is
@@ -116,16 +115,16 @@ constexpr std::array<uint8_t, 256> kCRCLoTable = {
 
 uint16_t compute_crc(const std::vector<uint8_t>& cmd)
 {
-  uint16_t crc_hi = 0x00FF;
-  uint16_t crc_lo = 0x00FF;
+   uint16_t crc_hi = 0x00FF;
+   uint16_t crc_lo = 0x00FF;
 
-  for (uint8_t byte : cmd)
-  {
-    uint8_t index = crc_lo ^ byte;
-    crc_lo = crc_hi ^ kCRCHiTable[index];
-    crc_hi = kCRCLoTable[index];
-  }
+   for(uint8_t byte : cmd)
+   {
+      uint8_t index = crc_lo ^ byte;
+      crc_lo = crc_hi ^ kCRCHiTable[index];
+      crc_hi = kCRCLoTable[index];
+   }
 
-  return (crc_lo << 8) + crc_hi;
+   return (crc_lo << 8) + crc_hi;
 }
-}  // namespace robotiq_driver::crc_utils
+} // namespace robotiq_driver::crc_utils

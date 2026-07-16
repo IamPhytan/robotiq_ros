@@ -31,12 +31,11 @@
 #include <cstdint>
 #include <vector>
 
-namespace robotiq_driver::crc_utils
-{
+namespace robotiq_driver::crc_utils {
 /**
  * @brief Compute the CRC for the CRC-16 MODBUS protocol.
  * @param data The data to compute the CRC for.
  * @return A 16-bits CRC.
  */
 uint16_t compute_crc(const std::vector<uint8_t>& data);
-}  // namespace robotiq_driver::crc_utils
+} // namespace robotiq_driver::crc_utils
