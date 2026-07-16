@@ -1,11 +1,9 @@
-# pre-commit formatting checks.
+# Repo-wide pre-commit formatting/linting checks.
 #
-# - clang-format: repo-wide C/C++ formatting against the single root
-#   .clang-format (shared Robotiq C++ style), via the root .pre-commit-config.yaml.
-# - grippers: black, flake8, codespell, whitespace/eol hooks over the vendored
-#   gripper tree, using grippers/.pre-commit-config.yaml. pre-commit runs hooks
-#   from the git root, so flake8 wouldn't find grippers/.flake8 on its own — we
-#   place it at the root for the run.
+# A single root .pre-commit-config.yaml drives clang-format (C/C++), black +
+# flake8 (Python), codespell, and the standard whitespace/eol/yaml hooks. Its
+# top-level `files` allow-list scopes the run to the trees we own and leaves the
+# extern/tactile_sensors submodule out.
 name: Format
 
 on:
@@ -13,7 +11,9 @@ on:
     paths:
       - "grippers/**"
       - "robotiq_tsf/**"
+      - "docker/**"
       - ".clang-format"
+      - ".flake8"
       - ".pre-commit-config.yaml"
       - ".github/workflows/ci-format.yml"
   push:
@@ -21,43 +21,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  clang-format:
-    name: Format (clang-format)
+  pre-commit:
+    name: Format
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run clang-format over all tracked C/C++
+      - name: Run pre-commit
         run: |
           python -m pip install --upgrade pre-commit
-          # Every tracked C/C++ source in the repo; the root .clang-format is the
-          # single style config (clang-format walks up to it per-file).
-          mapfile -t files < <(git ls-files \
-            '*.c' '*.cc' '*.cxx' '*.cpp' \
-            '*.h' '*.hh' '*.hpp' '*.hxx' '*.ipp')
-          pre-commit run clang-format \
-            --files "${files[@]}" \
-            --show-diff-on-failure
-
-  grippers:
-    name: Format (grippers)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Make grippers' flake8 config discoverable from the git root
-        run: cp grippers/.flake8 .flake8
-      - name: Run pre-commit on grippers/
-        run: |
-          python -m pip install --upgrade pre-commit
-          # Restrict to tracked files under grippers/ (paths are relative to the
-          # git root, which is where pre-commit runs hooks from).
-          mapfile -t files < <(git ls-files grippers)
-          pre-commit run \
-            --config grippers/.pre-commit-config.yaml \
-            --files "${files[@]}" \
-            --show-diff-on-failure
+          pre-commit run --all-files --show-diff-on-failure
