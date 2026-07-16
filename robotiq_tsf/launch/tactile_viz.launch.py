@@ -98,5 +98,5 @@ def generate_launch_description():
     )
 
     return LaunchDescription(
-        [rviz_arg, rviz_config_arg, input_topic_arg, driver, viz, rviz]
+        [rviz_arg, rviz_config_arg, input_topic_arg, poller_arg, driver, viz, rviz]
     )
