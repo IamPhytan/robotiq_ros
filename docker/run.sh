@@ -9,7 +9,7 @@
 #
 # Inside the container the workspace is already built and sourced:
 #   gripper bringup : ros2 launch robotiq_description robotiq_control.launch.py
-#   sensor node     : ros2 run robotiq_tsf poll_data_node
+#   sensor node     : ros2 run robotiq_tsf poll_data_sdk_node
 #   rebuild         : cd /ws && colcon build --symlink-install
 
 set -euo pipefail
@@ -69,7 +69,10 @@ case "${PRODUCT}" in
         if [[ -n "${d}" ]]; then
           real="$(readlink -f "${d}")"
           log sensor "  found sensor device: ${d} -> ${real}"
-          DEV+=(--device="${real}":"${d}")
+          # Map at the REAL tty name (not the udev symlink): libserialport (SDK
+          # poller) resolves ports via /sys/class/tty/<name>, which only knows
+          # the real device. The SDK node then autodetects it by USB descriptor.
+          DEV+=(--device="${real}")
           found=1
         fi
       done < <(find_sensor_devices)

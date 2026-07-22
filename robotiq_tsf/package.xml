@@ -29,6 +29,9 @@
   <exec_depend>rosidl_default_runtime</exec_depend>
 
   <depend>libopencv-dev</depend>
+  <!-- SDK-backed poller (poll_data_sdk_node) links the tactile_sensors SDK,
+       which uses libserialport. Installed explicitly in docker/Dockerfile. -->
+  <depend>libserialport</depend>
 
   <!-- tactile_viz_node (Python RViz visualization) + its launch/rviz. -->
   <exec_depend>rclpy</exec_depend>

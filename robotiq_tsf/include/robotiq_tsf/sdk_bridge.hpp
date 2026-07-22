@@ -26,12 +26,16 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-// Shared gtest entry point for robotiq_tsf test executables.
+#pragma once
 
-#include <gtest/gtest.h>
+#include "finger_data.h" // NOLINT(build/include_subdir) - external SDK header
+#include "robotiq_tsf/msg/sensor.hpp"
 
-int main(int argc, char** argv)
-{
-   ::testing::InitGoogleTest(&argc, argv);
-   return RUN_ALL_TESTS();
-}
+namespace robotiq_tsf {
+
+// Copy one SDK Fingers sample into the aggregate Sensor message: staticdata
+// taxels, dynamic, accelerometer, gyroscope and per-finger timestamps.
+// (EulerAngle/Quaternion are filled by the caller's AHRS fusion, not here.)
+void fillSensorMessages(const Fingers& fingers, msg::Sensor& out);
+
+} // namespace robotiq_tsf

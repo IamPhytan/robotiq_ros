@@ -17,11 +17,11 @@ ARG ROS_DISTRO
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# Build tooling + sensor deps (libusb/OpenCV/cv_bridge) + gripper deps (ros2_control stack).
+# Build tooling + sensor deps (OpenCV/cv_bridge/libserialport) + gripper deps (ros2_control stack).
 RUN apt-get update && apt-get install -y \
         tzdata terminator pkg-config \
         python3-colcon-common-extensions python3-vcstool python3-rosdep \
-        libusb-1.0-0-dev libopencv-dev \
+        libopencv-dev libserialport-dev \
         ros-${ROS_DISTRO}-cv-bridge \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
@@ -40,6 +40,11 @@ RUN rosdep init 2>/dev/null || true; rosdep update
 RUN mkdir -p /ws/src
 COPY robotiq_tsf /ws/src/robotiq_tsf
 COPY grippers    /ws/src/grippers
+# Tactile sensors SDK: robotiq_tsf's poll_data_sdk_node compiles it via the
+# relative path ../extern/tactile_sensors/sdk_cpp. COLCON_IGNORE stops colcon
+# from building the SDK's own standalone CMakeLists as a separate package.
+COPY extern/tactile_sensors/sdk_cpp /ws/src/extern/tactile_sensors/sdk_cpp
+RUN touch /ws/src/extern/tactile_sensors/sdk_cpp/COLCON_IGNORE
 
 # Gripper's external `serial` dep (tylerjw/serial), via the upstream .repos file.
 RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
@@ -47,7 +52,7 @@ RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
 # Resolve any remaining rosdeps from the package manifests, then build Release.
 RUN apt-get update \
     && rosdep install --from-paths /ws/src --ignore-src -y --rosdistro ${ROS_DISTRO} \
-         --skip-keys "OpenCV" \
+         --skip-keys "OpenCV libserialport" \
     && rm -rf /var/lib/apt/lists/* \
     && /bin/bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
         && cd /ws && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
