@@ -33,7 +33,6 @@ The script has no .py extension, so it is loaded via importlib; the node's
 callbacks are driven directly with constructed StaticData messages and the
 publishers are replaced with recording stubs — no executor or driver needed.
 """
-
 import importlib.machinery
 import importlib.util
 import math
@@ -128,7 +127,12 @@ def test_rpy_to_quat():
     assert (q.w, q.x, q.y, q.z) == pytest.approx(
         (math.cos(math.pi / 4), math.sin(math.pi / 4), 0.0, 0.0)
     )
+    # General-case golden (ZYX composition), pinned so a future swap to a
+    # library helper cannot silently change convention.
     q = viz._rpy_to_quat(0.3, -0.7, 1.1)
+    assert (q.w, q.x, q.y, q.z) == pytest.approx(
+        (0.765062179348, 0.296891540058, -0.215672410090, 0.529169808944)
+    )
     assert q.w**2 + q.x**2 + q.y**2 + q.z**2 == pytest.approx(1.0)
 
 

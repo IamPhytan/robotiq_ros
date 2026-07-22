@@ -35,6 +35,9 @@
 // types as the legacy PollData.cpp node. The USB / packet / parsing logic lives
 // in the SDK — the node contains only the bridge into ROS + the AHRS fusion.
 
+#include <Eigen/Core>
+
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -92,18 +95,20 @@ private:
    double publish_period_s_ = 0.0;
    std::chrono::steady_clock::time_point last_pub_{};
 
+   // Per-finger IMU bias estimates: accumulated as sums during the startup
+   // calibration window, then converted to means. The accel "bias" is really
+   // the gravity direction and seeds the filter (see handleFingers). Zeroed
+   // in the constructor (Eigen vectors default-construct uninitialized).
    int bias_iter_ = 0;
-   float ax1_bias_ = 0, ay1_bias_ = 0, az1_bias_ = 0;
-   float ax2_bias_ = 0, ay2_bias_ = 0, az2_bias_ = 0;
-   float gx1_bias_ = 0, gy1_bias_ = 0, gz1_bias_ = 0;
-   float gx2_bias_ = 0, gy2_bias_ = 0, gz2_bias_ = 0;
+   std::array<Eigen::Vector3f, FINGER_COUNT> accel_bias_;
+   std::array<Eigen::Vector3f, FINGER_COUNT> gyro_bias_;
 
    // AHRS filter — one instance per finger; integrated on every SDK packet.
    robotiq_tsf::AhrsConfig ahrs_cfg_;
-   MadgwickFilter filter_[FINGER_COUNT];
+   std::array<MadgwickFilter, FINGER_COUNT> filter_;
    // Per-finger MCU timestamp (ms) of the last integrated sample; 0 = not yet
    // seeded (start of stream, or just after the bias calibration).
-   uint64_t last_ts_ms_[FINGER_COUNT] = {0, 0};
+   std::array<uint64_t, FINGER_COUNT> last_ts_ms_{};
 
    std::atomic<bool> stopped_{false};
    std::atomic<uint64_t> frames_received_{0};

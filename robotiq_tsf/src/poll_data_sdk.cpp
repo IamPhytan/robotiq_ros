@@ -33,6 +33,8 @@
 
 #include <strings.h>
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -61,6 +63,12 @@ constexpr int kBiasCalculationIterations = 5000;
 constexpr const char* kDefaultDevice = robotiq_tsf::kDefaultSensorDevice;
 constexpr float kAccelRes = 2.0f / 32768.0f;
 constexpr float kGyroRes = 250.0f / 32768.0f;
+
+// Raw IMU triple (int16 counts) -> float vector, before resolution scaling.
+Eigen::Vector3f toVector3f(const int16_t (&v)[3])
+{
+   return {static_cast<float>(v[0]), static_cast<float>(v[1]), static_cast<float>(v[2])};
+}
 // SDK sampling period: 1 ms (~1 kHz request rate).
 constexpr unsigned int kSamplePeriodMs = 1;
 
@@ -121,6 +129,8 @@ PollDataSdkNode::PollDataSdkNode()
    {
       filter_[f].setBeta(ahrs_cfg_.beta);
       filter_[f].setAccelGate(ahrs_cfg_.accel_gate_lo, ahrs_cfg_.accel_gate_hi);
+      accel_bias_[f].setZero();
+      gyro_bias_[f].setZero();
    }
 
    auto qos = rclcpp::SensorDataQoS();
@@ -273,137 +283,79 @@ void PollDataSdkNode::handleFingers(const Fingers& fingers)
 
    if(bias_iter_ > kBiasCalculationIterations)
    {
-      // Bias-corrected IMU: accel in g, gyro in deg/s.
-      const float ax1 = fingers.finger[0].accelerometer[0] * kAccelRes - ax1_bias_;
-      const float ay1 = fingers.finger[0].accelerometer[1] * kAccelRes - ay1_bias_;
-      const float az1 = fingers.finger[0].accelerometer[2] * kAccelRes - az1_bias_;
-      const float ax2 = fingers.finger[1].accelerometer[0] * kAccelRes - ax2_bias_;
-      const float ay2 = fingers.finger[1].accelerometer[1] * kAccelRes - ay2_bias_;
-      const float az2 = fingers.finger[1].accelerometer[2] * kAccelRes - az2_bias_;
-      const float gx1 = fingers.finger[0].gyroscope[0] * kGyroRes - gx1_bias_;
-      const float gy1 = fingers.finger[0].gyroscope[1] * kGyroRes - gy1_bias_;
-      const float gz1 = fingers.finger[0].gyroscope[2] * kGyroRes - gz1_bias_;
-      const float gx2 = fingers.finger[1].gyroscope[0] * kGyroRes - gx2_bias_;
-      const float gy2 = fingers.finger[1].gyroscope[1] * kGyroRes - gy2_bias_;
-      const float gz2 = fingers.finger[1].gyroscope[2] * kGyroRes - gz2_bias_;
-
-      // Integration step from each finger's MCU timestamp (immune to host
-      // jitter, and to the stall a stop()->start() cycle would inject). 0 = not
-      // usable (first sample after calibration, or a duplicate/backwards
-      // timestamp) -> skip integration for that finger this frame.
-      const float dt1 = robotiq_tsf::deriveDt(last_ts_ms_[0],
-                                              fingers.finger[0].timestamp,
-                                              ahrs_cfg_.dt_clamp_lo,
-                                              ahrs_cfg_.dt_clamp_hi);
-      const float dt2 = robotiq_tsf::deriveDt(last_ts_ms_[1],
-                                              fingers.finger[1].timestamp,
-                                              ahrs_cfg_.dt_clamp_lo,
-                                              ahrs_cfg_.dt_clamp_hi);
-      last_ts_ms_[0] = fingers.finger[0].timestamp;
-      last_ts_ms_[1] = fingers.finger[1].timestamp;
-
       constexpr float deg_to_rad = static_cast<float>(M_PI / 180.0);
-      if(dt1 > 0.0f)
+      for(int f = 0; f < FINGER_COUNT; ++f)
       {
-         filter_[0].updateIMU(gx1 * deg_to_rad, gy1 * deg_to_rad, gz1 * deg_to_rad, ax1, ay1, az1, dt1);
-      }
-      if(dt2 > 0.0f)
-      {
-         filter_[1].updateIMU(gx2 * deg_to_rad, gy2 * deg_to_rad, gz2 * deg_to_rad, ax2, ay2, az2, dt2);
-      }
+         const auto& finger = fingers.finger[f];
+         // Bias-corrected IMU: accel in g, gyro in deg/s. Explicit Vector3f
+         // on the left (not auto): the right side is a lazy Eigen expression
+         // referencing temporaries, and only the assignment evaluates it.
+         const Eigen::Vector3f accel = toVector3f(finger.accelerometer) * kAccelRes - accel_bias_[f];
+         const Eigen::Vector3f gyro = toVector3f(finger.gyroscope) * kGyroRes - gyro_bias_[f];
 
-      // Online gyro-bias trim while stationary: drift the stored bias slowly
-      // toward the residual, so a frozen bias can't leak thermal drift into yaw.
-      const float alpha = ahrs_cfg_.bias_learn_rate;
-      if(dt1 > 0.0f
-         && robotiq_tsf::sampleIsStill(gx1,
-                                       gy1,
-                                       gz1,
-                                       ax1,
-                                       ay1,
-                                       az1,
-                                       ahrs_cfg_.still_gyro_eps_deg_s,
-                                       ahrs_cfg_.still_accel_eps_g))
-      {
-         gx1_bias_ = robotiq_tsf::trimBias(gx1_bias_, gx1, alpha);
-         gy1_bias_ = robotiq_tsf::trimBias(gy1_bias_, gy1, alpha);
-         gz1_bias_ = robotiq_tsf::trimBias(gz1_bias_, gz1, alpha);
-      }
-      if(dt2 > 0.0f
-         && robotiq_tsf::sampleIsStill(gx2,
-                                       gy2,
-                                       gz2,
-                                       ax2,
-                                       ay2,
-                                       az2,
-                                       ahrs_cfg_.still_gyro_eps_deg_s,
-                                       ahrs_cfg_.still_accel_eps_g))
-      {
-         gx2_bias_ = robotiq_tsf::trimBias(gx2_bias_, gx2, alpha);
-         gy2_bias_ = robotiq_tsf::trimBias(gy2_bias_, gy2, alpha);
-         gz2_bias_ = robotiq_tsf::trimBias(gz2_bias_, gz2, alpha);
-      }
+         // Integration step from the finger's MCU timestamp (immune to host
+         // jitter, and to the stall a stop()->start() cycle would inject).
+         // 0 = not usable (first sample after calibration, or a duplicate/
+         // backwards timestamp) -> skip integration for this finger.
+         const float dt =
+            robotiq_tsf::deriveDt(last_ts_ms_[f], finger.timestamp, ahrs_cfg_.dt_clamp_lo, ahrs_cfg_.dt_clamp_hi);
+         last_ts_ms_[f] = finger.timestamp;
 
-      // One absolute filter quaternion sources both orientation topics; Euler
-      // wraps at ±180°, so continuous-orientation consumers use Quaternion.
-      float q1[4], q2[4];
-      filter_[0].getQuaternion(q1[0], q1[1], q1[2], q1[3]);
-      filter_[1].getQuaternion(q2[0], q2[1], q2[2], q2[3]);
-      for(int i = 0; i < 4; ++i)
-      {
-         sensors_data_.quaternion.data[0].values[i] = q1[i];
-         sensors_data_.quaternion.data[1].values[i] = q2[i];
-      }
+         if(dt > 0.0f)
+         {
+            const Eigen::Vector3f gyro_rad = gyro * deg_to_rad;
+            filter_[f].updateIMU(gyro_rad.x(), gyro_rad.y(), gyro_rad.z(), accel.x(), accel.y(), accel.z(), dt);
 
-      filter_[0].getEulerDeg(sensors_data_.eulerangle.data[0].values[0],
-                             sensors_data_.eulerangle.data[0].values[1],
-                             sensors_data_.eulerangle.data[0].values[2]);
-      filter_[1].getEulerDeg(sensors_data_.eulerangle.data[1].values[0],
-                             sensors_data_.eulerangle.data[1].values[1],
-                             sensors_data_.eulerangle.data[1].values[2]);
+            // Online gyro-bias trim while stationary: drift the stored bias
+            // slowly toward the residual, so a frozen bias can't leak
+            // thermal drift into yaw.
+            if(robotiq_tsf::sampleIsStill(gyro, accel, ahrs_cfg_.still_gyro_eps_deg_s, ahrs_cfg_.still_accel_eps_g))
+            {
+               gyro_bias_[f] = robotiq_tsf::trimBias(gyro_bias_[f], gyro, ahrs_cfg_.bias_learn_rate);
+            }
+         }
+
+         // One absolute filter quaternion sources both orientation topics;
+         // Euler wraps at ±180°, so continuous-orientation consumers use
+         // Quaternion.
+         const Eigen::Quaternionf q = filter_[f].quaternion();
+         sensors_data_.quaternion.data[f].values[0] = q.w();
+         sensors_data_.quaternion.data[f].values[1] = q.x();
+         sensors_data_.quaternion.data[f].values[2] = q.y();
+         sensors_data_.quaternion.data[f].values[3] = q.z();
+
+         filter_[f].getEulerDeg(sensors_data_.eulerangle.data[f].values[0],
+                                sensors_data_.eulerangle.data[f].values[1],
+                                sensors_data_.eulerangle.data[f].values[2]);
+      }
    }
    else if(bias_iter_ == kBiasCalculationIterations)
    {
-      gx1_bias_ /= kBiasCalculationIterations;
-      gy1_bias_ /= kBiasCalculationIterations;
-      gz1_bias_ /= kBiasCalculationIterations;
-      gx2_bias_ /= kBiasCalculationIterations;
-      gy2_bias_ /= kBiasCalculationIterations;
-      gz2_bias_ /= kBiasCalculationIterations;
-      ax1_bias_ /= kBiasCalculationIterations;
-      ay1_bias_ /= kBiasCalculationIterations;
-      az1_bias_ /= kBiasCalculationIterations;
-      ax2_bias_ /= kBiasCalculationIterations;
-      ay2_bias_ /= kBiasCalculationIterations;
-      az2_bias_ /= kBiasCalculationIterations;
+      for(int f = 0; f < FINGER_COUNT; ++f)
+      {
+         gyro_bias_[f] /= kBiasCalculationIterations;
+         accel_bias_[f] /= kBiasCalculationIterations;
 
-      // Gravity in the body frame at rest is the signal, not a bias: seed
-      // each filter's quaternion from the accel mean, then stop subtracting
-      // the accel offset. Mirrors PollData.cpp's new MadgwickFilter path.
-      filter_[0].initFromAccel(ax1_bias_, ay1_bias_, az1_bias_);
-      filter_[1].initFromAccel(ax2_bias_, ay2_bias_, az2_bias_);
-      ax1_bias_ = ay1_bias_ = az1_bias_ = 0.0f;
-      ax2_bias_ = ay2_bias_ = az2_bias_ = 0.0f;
+         // Gravity in the body frame at rest is the signal, not a bias: seed
+         // each filter's quaternion from the accel mean, then stop subtracting
+         // the accel offset. Mirrors PollData.cpp's new MadgwickFilter path.
+         filter_[f].initFromAccel(accel_bias_[f].x(), accel_bias_[f].y(), accel_bias_[f].z());
+         accel_bias_[f].setZero();
 
-      // Reseed the per-finger dt so the first post-calibration sample skips
-      // integration instead of using a stale delta spanning the calibration.
-      last_ts_ms_[0] = last_ts_ms_[1] = 0;
+         // Reseed the per-finger dt so the first post-calibration sample skips
+         // integration instead of using a stale delta spanning the calibration.
+         last_ts_ms_[f] = 0;
+      }
       ++bias_iter_;
    }
    else
    {
-      gx1_bias_ += fingers.finger[0].gyroscope[0] * kGyroRes;
-      gy1_bias_ += fingers.finger[0].gyroscope[1] * kGyroRes;
-      gz1_bias_ += fingers.finger[0].gyroscope[2] * kGyroRes;
-      gx2_bias_ += fingers.finger[1].gyroscope[0] * kGyroRes;
-      gy2_bias_ += fingers.finger[1].gyroscope[1] * kGyroRes;
-      gz2_bias_ += fingers.finger[1].gyroscope[2] * kGyroRes;
-      ax1_bias_ += fingers.finger[0].accelerometer[0] * kAccelRes;
-      ay1_bias_ += fingers.finger[0].accelerometer[1] * kAccelRes;
-      az1_bias_ += fingers.finger[0].accelerometer[2] * kAccelRes;
-      ax2_bias_ += fingers.finger[1].accelerometer[0] * kAccelRes;
-      ay2_bias_ += fingers.finger[1].accelerometer[1] * kAccelRes;
-      az2_bias_ += fingers.finger[1].accelerometer[2] * kAccelRes;
+      for(int f = 0; f < FINGER_COUNT; ++f)
+      {
+         const auto& finger = fingers.finger[f];
+         gyro_bias_[f] += toVector3f(finger.gyroscope) * kGyroRes;
+         accel_bias_[f] += toVector3f(finger.accelerometer) * kAccelRes;
+      }
       ++bias_iter_;
    }
 

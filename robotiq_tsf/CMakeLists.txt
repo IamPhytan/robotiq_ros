@@ -7,6 +7,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -84,6 +85,7 @@ target_include_directories(${PROJECT_NAME}_algorithms
 target_link_libraries(${PROJECT_NAME}_algorithms
   PUBLIC
     ${OpenCV_LIBRARIES}
+    Eigen3::Eigen
 )
 
 # SDK poller node logic as a static library, so the executable and the unit
@@ -163,6 +165,7 @@ install(DIRECTORY resource/
 )
 
 ament_export_dependencies(
+  Eigen3
   OpenCV
   ament_index_cpp
   rclcpp

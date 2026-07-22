@@ -33,8 +33,12 @@
 
 #include <gtest/gtest.h>
 
+#include <Eigen/Core>
+
+#include "eigen_test_utils.hpp"
 #include "robotiq_tsf/fusion.hpp"
 
+using Eigen::Vector3f;
 using robotiq_tsf::deriveDt;
 using robotiq_tsf::sampleIsStill;
 using robotiq_tsf::trimBias;
@@ -75,27 +79,30 @@ TEST(DeriveDt, StalledDeltaIsClampedToHi)
 
 TEST(SampleIsStill, TrueWhenGyroSmallAndAccelNearOneG)
 {
-   EXPECT_TRUE(sampleIsStill(0.1f, -0.1f, 0.05f, 0.0f, 0.0f, 1.0f, 0.8f, 0.05f));
+   EXPECT_TRUE(sampleIsStill({0.1f, -0.1f, 0.05f}, {0.0f, 0.0f, 1.0f}, 0.8f, 0.05f));
 }
 
 TEST(SampleIsStill, FalseWhenRotating)
 {
-   EXPECT_FALSE(sampleIsStill(5.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.8f, 0.05f));
+   EXPECT_FALSE(sampleIsStill({5.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.8f, 0.05f));
 }
 
 TEST(SampleIsStill, FalseUnderLinearAcceleration)
 {
    // |a| well away from 1 g -> not stationary even with zero angular rate.
-   EXPECT_FALSE(sampleIsStill(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.5f, 0.8f, 0.05f));
+   EXPECT_FALSE(sampleIsStill({0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.5f}, 0.8f, 0.05f));
 }
 
 TEST(TrimBias, NudgesTowardResidualByAlpha)
 {
-   // bias 0.10, residual 0.20, alpha 0.5 -> 0.10 + 0.5 * 0.20 = 0.20.
-   EXPECT_FLOAT_EQ(trimBias(0.10f, 0.20f, 0.5f), 0.20f);
+   // bias 0.10, residual 0.20, alpha 0.5 -> 0.10 + 0.5 * 0.20 = 0.20,
+   // independently per axis.
+   const Vector3f out = trimBias({0.10f, 0.0f, -0.10f}, {0.20f, 0.0f, 0.20f}, 0.5f);
+   robotiq_tsf::test::expectEigenFloatEq(out, Vector3f(0.20f, 0.0f, 0.0f));
 }
 
 TEST(TrimBias, ZeroResidualLeavesBiasUnchanged)
 {
-   EXPECT_FLOAT_EQ(trimBias(0.42f, 0.0f, 0.0005f), 0.42f);
+   const Vector3f bias(0.42f, -0.17f, 0.03f);
+   robotiq_tsf::test::expectEigenFloatEq(trimBias(bias, Vector3f::Zero(), 0.0005f), bias);
 }

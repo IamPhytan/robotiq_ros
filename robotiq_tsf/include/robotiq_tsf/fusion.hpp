@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <Eigen/Core>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -70,24 +72,18 @@ inline float deriveDt(uint64_t prev_ts_ms, uint64_t ts_ms, float lo, float hi)
 
 // True when the sample looks stationary: small angular rate and accel norm near
 // 1 g. gyro in deg/s, accel in g. Gates the online gyro-bias trim.
-inline bool sampleIsStill(float gx,
-                          float gy,
-                          float gz,
-                          float ax,
-                          float ay,
-                          float az,
+inline bool sampleIsStill(const Eigen::Vector3f& gyro,
+                          const Eigen::Vector3f& accel,
                           float gyro_eps_deg_s,
                           float accel_eps_g)
 {
-   const float gyro_mag = std::sqrt(gx * gx + gy * gy + gz * gz);
-   const float accel_norm = std::sqrt(ax * ax + ay * ay + az * az);
-   return gyro_mag < gyro_eps_deg_s && std::fabs(accel_norm - 1.0f) < accel_eps_g;
+   return gyro.norm() < gyro_eps_deg_s && std::fabs(accel.norm() - 1.0f) < accel_eps_g;
 }
 
 // One EMA step of the online gyro-bias trim: nudge `bias` toward the residual
 // (post-bias-subtraction) gyro `rate` by `alpha`. Call only when still, so a
 // frozen bias can't let thermal drift accumulate as yaw drift over a session.
-inline float trimBias(float bias, float rate, float alpha)
+inline Eigen::Vector3f trimBias(const Eigen::Vector3f& bias, const Eigen::Vector3f& rate, float alpha)
 {
    return bias + alpha * rate;
 }

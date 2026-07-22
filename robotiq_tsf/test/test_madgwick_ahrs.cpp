@@ -34,9 +34,14 @@
 
 #include <gtest/gtest.h>
 
+#include <Eigen/Geometry>
 #include <cmath>
 
 #include "robotiq_tsf/MadgwickAHRS.h"
+
+using Eigen::AngleAxisf;
+using Eigen::Quaternionf;
+using Eigen::Vector3f;
 
 namespace {
 
@@ -67,7 +72,7 @@ struct EulerAngles
    float yaw;
 };
 
-EulerAngles eulerDegOf(const float q[4])
+EulerAngles eulerDegOf(const Quaternionf& q)
 {
    EulerAngles e;
    quatToEulerDeg(q, e.roll, e.pitch, e.yaw);
@@ -104,15 +109,13 @@ TEST(QuatHelpers, EulerFromSingleAxisQuaternions)
    constexpr float kPitchDeg = 45.0f;
    constexpr float kYawDeg = -60.0f;
 
-   float q[4];
-
-   quatFromAxisX(kRollDeg * kDegToRad, q);
+   Quaternionf q(AngleAxisf(kRollDeg * kDegToRad, Vector3f::UnitX()));
    EXPECT_TRUE(eulerNear(eulerDegOf(q), {kRollDeg, 0.0f, 0.0f}, kExactTolDeg));
 
-   quatFromAxisY(kPitchDeg * kDegToRad, q);
+   q = AngleAxisf(kPitchDeg * kDegToRad, Vector3f::UnitY());
    EXPECT_TRUE(eulerNear(eulerDegOf(q), {0.0f, kPitchDeg, 0.0f}, kExactTolDeg));
 
-   quatFromAxisZ(kYawDeg * kDegToRad, q);
+   q = AngleAxisf(kYawDeg * kDegToRad, Vector3f::UnitZ());
    EXPECT_TRUE(eulerNear(eulerDegOf(q), {0.0f, 0.0f, kYawDeg}, kExactTolDeg));
 }
 
@@ -124,12 +127,9 @@ TEST(QuatHelpers, EulerFromComposedZyxRotation)
    constexpr float kPitchDeg = 20.0f;
    constexpr float kYawDeg = 30.0f;
 
-   float qx[4], qy[4], qz[4], tmp[4], q[4];
-   quatFromAxisX(kRollDeg * kDegToRad, qx);
-   quatFromAxisY(kPitchDeg * kDegToRad, qy);
-   quatFromAxisZ(kYawDeg * kDegToRad, qz);
-   quatMul(qz, qy, tmp);
-   quatMul(tmp, qx, q);
+   const Quaternionf q = AngleAxisf(kYawDeg * kDegToRad, Vector3f::UnitZ())
+                       * AngleAxisf(kPitchDeg * kDegToRad, Vector3f::UnitY())
+                       * AngleAxisf(kRollDeg * kDegToRad, Vector3f::UnitX());
 
    EXPECT_TRUE(eulerNear(eulerDegOf(q), {kRollDeg, kPitchDeg, kYawDeg}, kExactTolDeg));
 }
@@ -141,32 +141,65 @@ TEST(QuatHelpers, MulByConjugateGivesRelativeRotation)
    constexpr float kCurRollDeg = 50.0f;
    constexpr float kRelRollDeg = kCurRollDeg - kRefRollDeg;
 
-   float q_ref[4], q_cur[4], q_ref_conj[4], q_rel[4];
-   quatFromAxisX(kRefRollDeg * kDegToRad, q_ref);
-   quatFromAxisX(kCurRollDeg * kDegToRad, q_cur);
-   quatConj(q_ref, q_ref_conj);
-   quatMul(q_ref_conj, q_cur, q_rel);
+   const Quaternionf q_ref(AngleAxisf(kRefRollDeg * kDegToRad, Vector3f::UnitX()));
+   const Quaternionf q_cur(AngleAxisf(kCurRollDeg * kDegToRad, Vector3f::UnitX()));
+   Quaternionf q_rel = q_ref.conjugate() * q_cur;
 
    EXPECT_TRUE(eulerNear(eulerDegOf(q_rel), {kRelRollDeg, 0.0f, 0.0f}, kExactTolDeg));
 
    // Self-relative must be identity.
-   quatConj(q_cur, q_ref_conj);
-   quatMul(q_ref_conj, q_cur, q_rel);
-   EXPECT_NEAR(q_rel[0], 1.0f, kQuatTol);
-   EXPECT_NEAR(q_rel[1], 0.0f, kQuatTol);
-   EXPECT_NEAR(q_rel[2], 0.0f, kQuatTol);
-   EXPECT_NEAR(q_rel[3], 0.0f, kQuatTol);
+   q_rel = q_cur.conjugate() * q_cur;
+   EXPECT_NEAR(q_rel.w(), 1.0f, kQuatTol);
+   EXPECT_NEAR(q_rel.x(), 0.0f, kQuatTol);
+   EXPECT_NEAR(q_rel.y(), 0.0f, kQuatTol);
+   EXPECT_NEAR(q_rel.z(), 0.0f, kQuatTol);
 }
 
-TEST(QuatHelpers, NormalizeScalesToUnitAndHandlesZero)
+TEST(QuatHelpers, HamiltonConventionGoldenComponents)
 {
-   float q[4] = {2.0f, 0.0f, 0.0f, 0.0f};
-   quatNormalize(q);
-   EXPECT_NEAR(q[0], 1.0f, kQuatTol);
+   // Pins the Hamilton product order and right-handed rotation signs of the
+   // Eigen types the filter is built on, with exact component values, so a
+   // convention regression cannot slip in silently.
+   constexpr float kHalfSqrt2 = 0.70710678f;
 
-   float z[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-   quatNormalize(z); // must not produce NaN/inf
-   EXPECT_TRUE(std::isfinite(z[0]) && std::isfinite(z[1]) && std::isfinite(z[2]) && std::isfinite(z[3]));
+   const Quaternionf qx(AngleAxisf(0.5f * kPi, Vector3f::UnitX()));
+   EXPECT_NEAR(qx.w(), kHalfSqrt2, kQuatTol);
+   EXPECT_NEAR(qx.x(), kHalfSqrt2, kQuatTol);
+   EXPECT_NEAR(qx.y(), 0.0f, kQuatTol);
+   EXPECT_NEAR(qx.z(), 0.0f, kQuatTol);
+
+   const Quaternionf qy(AngleAxisf(0.5f * kPi, Vector3f::UnitY()));
+   EXPECT_NEAR(qy.w(), kHalfSqrt2, kQuatTol);
+   EXPECT_NEAR(qy.y(), kHalfSqrt2, kQuatTol);
+
+   const Quaternionf qz(AngleAxisf(0.5f * kPi, Vector3f::UnitZ()));
+   EXPECT_NEAR(qz.w(), kHalfSqrt2, kQuatTol);
+   EXPECT_NEAR(qz.z(), kHalfSqrt2, kQuatTol);
+
+   // Hamilton product: qx(90) * qy(90) = (0.5, 0.5, 0.5, 0.5) exactly.
+   const Quaternionf q = qx * qy;
+   EXPECT_NEAR(q.w(), 0.5f, kQuatTol);
+   EXPECT_NEAR(q.x(), 0.5f, kQuatTol);
+   EXPECT_NEAR(q.y(), 0.5f, kQuatTol);
+   EXPECT_NEAR(q.z(), 0.5f, kQuatTol);
+}
+
+TEST(QuatHelpers, EulerExtractionClampsAtGimbalLock)
+{
+   // A slightly super-unit quaternion pushes |sin(pitch)| past 1; the
+   // extraction must clamp to exactly +/-90 deg and stay finite (no NaN from
+   // asin out of domain).
+   float roll, pitch, yaw;
+
+   const Quaternionf q_up(0.7071f, 0.0f, 0.7080f, 0.0f); // sinp < -1 -> +90
+   quatToEulerDeg(q_up, roll, pitch, yaw);
+   EXPECT_NEAR(pitch, 90.0f, kExactTolDeg);
+   EXPECT_TRUE(std::isfinite(roll) && std::isfinite(yaw));
+
+   const Quaternionf q_down(0.7071f, 0.0f, -0.7080f, 0.0f); // sinp > 1 -> -90
+   quatToEulerDeg(q_down, roll, pitch, yaw);
+   EXPECT_NEAR(pitch, -90.0f, kExactTolDeg);
+   EXPECT_TRUE(std::isfinite(roll) && std::isfinite(yaw));
 }
 
 TEST(MadgwickFilter, InitFromAccelMatchesTilt)
@@ -189,6 +222,22 @@ TEST(MadgwickFilter, InitFromAccelMatchesTilt)
    // Pure pitch: gravity_body = (-sin p, 0, cos p).
    f.initFromAccel(-std::sin(kPitchDeg * kDegToRad), 0.0f, std::cos(kPitchDeg * kDegToRad));
    EXPECT_TRUE(eulerNear(eulerDegOf(f), {0.0f, kPitchDeg, 0.0f}, kExactTolDeg));
+}
+
+TEST(MadgwickFilter, InitFromAccelCombinedRollPitch)
+{
+   // Gravity in body frame for roll r, pitch p (ZYX, yaw-free):
+   // g_body = (-sin p, sin r * cos p, cos r * cos p).
+   constexpr float kRollDeg = 30.0f;
+   constexpr float kPitchDeg = 20.0f;
+   const float sr = std::sin(kRollDeg * kDegToRad);
+   const float cr = std::cos(kRollDeg * kDegToRad);
+   const float sp = std::sin(kPitchDeg * kDegToRad);
+   const float cp = std::cos(kPitchDeg * kDegToRad);
+
+   MadgwickFilter f;
+   f.initFromAccel(-sp, sr * cp, cr * cp);
+   EXPECT_TRUE(eulerNear(eulerDegOf(f), {kRollDeg, kPitchDeg, 0.0f}, kExactTolDeg));
 }
 
 TEST(MadgwickFilter, InitFromZeroAccelResetsToIdentity)
@@ -263,6 +312,58 @@ TEST(MadgwickFilter, AccelGateRejectsMotionBursts)
    }
 
    EXPECT_LT(peakDeg, kGateLeakTolDeg);
+}
+
+TEST(MadgwickFilter, GoldenTrajectoryCheckpoints)
+{
+   // End-to-end numeric regression: a fixed synthetic IMU stream must keep
+   // reproducing the quaternion checkpoints recorded from the pre-Eigen
+   // implementation. Guards the library migration against any behavior
+   // change beyond float-op reordering: 1e-5 (~80 float32 ulps at unit
+   // scale) absorbs reordering drift accumulated over the 350 updates while
+   // staying orders of magnitude below a real algorithmic change.
+   constexpr float kGoldenTol = 1e-5f;
+   constexpr float kDt = 0.005f;
+   struct Checkpoint
+   {
+      const char* tag;
+      float q[4];
+   };
+
+   MadgwickFilter f;
+   f.initFromAccel(0.0f, 0.0f, 1.0f);
+
+   auto expectCheckpoint = [&f](const Checkpoint& c) {
+      float q[4];
+      f.getQuaternion(q[0], q[1], q[2], q[3]);
+      for(int i = 0; i < 4; ++i)
+      {
+         EXPECT_NEAR(q[i], c.q[i], kGoldenTol) << "checkpoint " << c.tag << " component " << i;
+      }
+   };
+
+   // Segment A: 100 steps stationary (accel gate open, gradient active).
+   for(int i = 0; i < 100; ++i)
+   {
+      f.updateIMU(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, kDt);
+   }
+   expectCheckpoint({"A", {1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f}});
+
+   // Segment B: 150 steps rolling at 60 deg/s with attitude-consistent accel.
+   for(int i = 0; i < 150; ++i)
+   {
+      const float roll = 60.0f * kDt * static_cast<float>(i) * kDegToRad;
+      f.updateIMU(60.0f * kDegToRad, 0.0f, 0.0f, 0.0f, std::sin(roll), std::cos(roll), kDt);
+   }
+   expectCheckpoint({"B", {0.92394269f, 0.38253102f, 0.00000000f, 0.00000000f}});
+
+   // Segment C: 100 steps yawing at 45 deg/s while accel is gated
+   // (|a| = 1.4 g): pure gyro integration path.
+   for(int i = 0; i < 100; ++i)
+   {
+      f.updateIMU(0.0f, 0.0f, 45.0f * kDegToRad, 0.98f, 0.0f, 1.0f, kDt);
+   }
+   expectCheckpoint({"C", {0.90618920f, 0.37518126f, -0.07462808f, 0.18025191f}});
 }
 
 } // namespace
