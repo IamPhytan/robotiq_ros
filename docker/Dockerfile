@@ -1,38 +1,34 @@
-# Single ROS 2 image for the whole robotiq ros workspace:
+# Multi-stage ROS 2 image for the whole robotiq ros workspace:
 #   - robotiq_tsf   (TSF-85 tactile sensor driver)
 #   - grippers/*    (Robotiq gripper driver, forked from PickNik)
 #
-# Self-contained: the image COPYs the workspace sources, pulls the gripper's
-# external `serial` dependency, and builds — so a reviewer can build and test
-# the branch with nothing but this repo.
+# Stage 1 (builder): full toolchain, compiles the workspace.
+# Stage 2 (runtime, default): slim — only runtime deps + the built install/, no
+#   compiler / colcon / test deps. GUI (rviz2, rqt, …) is optional.
 #
-# Distro is a build-arg flip:
-#   docker build -f docker/Dockerfile -t robotiq_ros2:jazzy .
-#   docker build --build-arg ROS_DISTRO=rolling -f docker/Dockerfile -t robotiq_ros2:rolling .
-# Build context MUST be the repo root (it COPYs robotiq_tsf/ and grippers/).
+# Build options, examples and the build-context requirement: see the Docker
+# section in README.md.
 
 ARG ROS_DISTRO=jazzy
-FROM ros:${ROS_DISTRO}-ros-base
+
+##############################  builder  ##############################
+FROM ros:${ROS_DISTRO}-ros-base AS builder
 ARG ROS_DISTRO
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# Build tooling + sensor deps (OpenCV/cv_bridge/libserialport) + gripper deps (ros2_control stack).
+# Build tooling + sensor build deps (libserialport, via pkg-config) + gripper
+# build deps (ros2_control stack).
 RUN apt-get update && apt-get install -y \
-        tzdata terminator pkg-config \
+        pkg-config \
         python3-colcon-common-extensions python3-vcstool python3-rosdep \
-        libopencv-dev libserialport-dev \
-        ros-${ROS_DISTRO}-cv-bridge \
+        libserialport-dev \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-controller-manager \
         ros-${ROS_DISTRO}-xacro \
-        ros-${ROS_DISTRO}-joint-state-publisher \
-        ros-${ROS_DISTRO}-joint-state-publisher-gui \
         ros-${ROS_DISTRO}-robot-state-publisher \
-        ros-${ROS_DISTRO}-rviz2 \
-        ros-${ROS_DISTRO}-rqt \
-        ros-${ROS_DISTRO}-rqt-controller-manager \
+        ros-${ROS_DISTRO}-joint-state-publisher \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rosdep init 2>/dev/null || true; rosdep update
@@ -49,13 +45,52 @@ RUN touch /ws/src/extern/tactile_sensors/sdk_cpp/COLCON_IGNORE
 # Gripper's external `serial` dep (tylerjw/serial), via the upstream .repos file.
 RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
 
-# Resolve any remaining rosdeps from the package manifests, then build Release.
+# Resolve remaining rosdeps (build + exec only — NOT test deps, e.g.
+# ament_clang_tidy → clang-tools), then build Release. No --symlink-install, so
+# install/ is self-contained and can be copied into the runtime stage.
+# BUILD_TESTING=OFF: this is a deployment image; tests are not run here.
 RUN apt-get update \
     && rosdep install --from-paths /ws/src --ignore-src -y --rosdistro ${ROS_DISTRO} \
-         --skip-keys "OpenCV libserialport" \
+         --skip-keys "libserialport" \
+         --dependency-types buildtool --dependency-types build \
+         --dependency-types build_export --dependency-types buildtool_export \
+         --dependency-types exec \
     && rm -rf /var/lib/apt/lists/* \
-    && /bin/bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
-        && cd /ws && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
+    && bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
+        && cd /ws && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
+
+##########################  runtime (default)  ########################
+# ros-core (not ros-base): the minimal ROS layer, without build-essential /
+# colcon / rosdep. Runtime deps are apt-installed explicitly below.
+FROM ros:${ROS_DISTRO}-ros-core AS runtime
+ARG ROS_DISTRO
+ARG DEBIAN_FRONTEND=noninteractive
+ARG WITH_GUI=true
+ENV TZ=Etc/UTC
+
+# Runtime deps only — no compiler, no colcon/rosdep, no test deps. Some -dev
+# packages still arrive anyway (~350 MB): ROS binary debs hard-depend on them,
+# e.g. ros-*-tf2-eigen -> libeigen3-dev, rviz-rendering -> mesa -dev. They are
+# inert with no compiler present, and unavoidable short of unbundling those debs.
+# GUI tools (rviz2/rqt/joint-state-publisher-gui/terminator) are optional; drop
+# them for headless robots with --build-arg WITH_GUI=false.
+RUN apt-get update && apt-get install -y \
+        libserialport0 \
+        ros-${ROS_DISTRO}-ros2-control \
+        ros-${ROS_DISTRO}-ros2-controllers \
+        ros-${ROS_DISTRO}-controller-manager \
+        ros-${ROS_DISTRO}-xacro \
+        ros-${ROS_DISTRO}-robot-state-publisher \
+        ros-${ROS_DISTRO}-joint-state-publisher \
+    && if [ "${WITH_GUI}" = "true" ]; then apt-get install -y \
+        terminator \
+        ros-${ROS_DISTRO}-rviz2 \
+        ros-${ROS_DISTRO}-joint-state-publisher-gui \
+        ros-${ROS_DISTRO}-rqt \
+        ros-${ROS_DISTRO}-rqt-controller-manager ; fi \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /ws/install /ws/install
 
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc \
  && echo "source /ws/install/setup.bash"            >> /root/.bashrc
