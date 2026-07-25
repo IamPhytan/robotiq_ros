@@ -1,4 +1,5 @@
 // Copyright (c) 2022 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -28,12 +29,16 @@
 
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <limits>
 #include <memory>
 #include <vector>
 
-#include <robotiq_driver/default_driver_factory.hpp>
+#include <robotiq_driver/gripper_scaling.hpp>
 #include <robotiq_driver/hardware_interface.hpp>
+#include <robotiq_driver/rclcpp_logger.hpp>
+
+#include <Robotiq/fake/gripper_factory.hpp>
 
 #include <hardware_interface/actuator_interface.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
@@ -42,33 +47,61 @@
 
 const auto kLogger = rclcpp::get_logger("RobotiqGripperHardwareInterface");
 
-constexpr uint8_t kGripperMinPos = 3;
-constexpr uint8_t kGripperMaxPos = 230;
-constexpr double kGripperMaxSpeed = 0.150; // mm/s
-constexpr double kGripperMaxforce = 235; // N
-constexpr uint8_t kGripperRange = kGripperMaxPos - kGripperMinPos;
+// Link-health and fault messages would otherwise repeat every control cycle.
+constexpr auto kDiagnosticThrottleMs = 5000;
 
-constexpr auto kGripperCommsLoopPeriod = std::chrono::milliseconds{10};
+// How long on_deactivate waits for the gripper to acknowledge the reset. The
+// exchange cycle sends it within a cycle or two; this only has to outlast a
+// retry or a lost frame.
+constexpr auto kDeactivationTimeout = std::chrono::seconds{2};
 
 namespace robotiq_driver {
-RobotiqGripperHardwareInterface::RobotiqGripperHardwareInterface()
+namespace {
+const char* to_string(Robotiq::ConnectionState state)
 {
-   driver_factory_ = std::make_unique<DefaultDriverFactory>();
-}
-
-RobotiqGripperHardwareInterface::~RobotiqGripperHardwareInterface()
-{
-   communication_thread_is_running_.store(false);
-   if(communication_thread_.joinable())
+   switch(state)
    {
-      communication_thread_.join();
+   case Robotiq::ConnectionState::Disconnected:
+      return "Disconnected";
+   case Robotiq::ConnectionState::Connecting:
+      return "Connecting";
+   case Robotiq::ConnectionState::Operational:
+      return "Operational";
+   case Robotiq::ConnectionState::Faulted:
+      return "Faulted";
    }
+   return "Unknown";
 }
 
-// This constructor is use for testing only.
-RobotiqGripperHardwareInterface::RobotiqGripperHardwareInterface(std::unique_ptr<DriverFactory> driver_factory)
-   : driver_factory_{std::move(driver_factory)}
+// A recovery future stays valid from launch until read() consumes its result,
+// so `valid()` alone answers "is a recovery outstanding"; this answers the
+// narrower "has it finished".
+bool has_finished(const std::future<Robotiq::ActivationResult>& recovery)
 {
+   return recovery.valid() && recovery.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+}
+
+// The throttled diagnostics below are wall-clock paced and independent of any
+// node, so they use their own clock rather than a lifecycle node's.
+rclcpp::Clock& diagnostic_clock()
+{
+   static rclcpp::Clock clock{RCL_STEADY_TIME};
+   return clock;
+}
+} // namespace
+
+RobotiqGripperHardwareInterface::RobotiqGripperHardwareInterface() = default;
+
+RobotiqGripperHardwareInterface::~RobotiqGripperHardwareInterface() = default;
+
+std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::create_gripper()
+{
+   if(parameters_.use_dummy)
+   {
+      RCLCPP_INFO(kLogger, "You are connected to a dummy driver, not a real gripper.");
+      return Robotiq::makeFakeGripper(parameters_.connection, logger_);
+   }
+   return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);
 }
 
 hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(
@@ -81,19 +114,23 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(
       return CallbackReturn::ERROR;
    }
 
-   // Read parameters.
-   gripper_closed_pos_ = stod(info_.hardware_parameters.at("gripper_closed_position"));
-   gripper_max_speed_ = info_.hardware_parameters.count("gripper_max_speed")
-                         ? stod(info_.hardware_parameters.at("gripper_max_speed"))
-                         : kGripperMaxSpeed;
-   gripper_max_force_ = info_.hardware_parameters.count("gripper_max_force")
-                         ? stod(info_.hardware_parameters.at("gripper_max_force"))
-                         : kGripperMaxforce;
+   // The SDK prints to stderr unless a sink is injected; send it to /rosout.
+   logger_ = std::make_shared<RclcppLogger>(rclcpp::get_logger("RobotiqGripperSDK"));
+
+   try
+   {
+      parameters_ = parseParameters(info_, kLogger);
+   }
+   catch(const std::exception& e)
+   {
+      RCLCPP_FATAL(kLogger, "Failed to read the hardware parameters: %s", e.what());
+      return CallbackReturn::ERROR;
+   }
+
    gripper_position_ = std::numeric_limits<double>::quiet_NaN();
    gripper_velocity_ = std::numeric_limits<double>::quiet_NaN();
    gripper_position_command_ = std::numeric_limits<double>::quiet_NaN();
    reactivate_gripper_cmd_ = NO_NEW_CMD_;
-   reactivate_gripper_async_cmd_.store(false);
 
    const hardware_interface::ComponentInfo& joint = info_.joints.at(0);
 
@@ -142,16 +179,6 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(
       }
    }
 
-   try
-   {
-      driver_ = driver_factory_->create(info_);
-   }
-   catch(const std::exception& e)
-   {
-      RCLCPP_FATAL(kLogger, "Failed to create a driver: %s", e.what());
-      return CallbackReturn::ERROR;
-   }
-
    return CallbackReturn::SUCCESS;
 }
 
@@ -159,26 +186,44 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
    const rclcpp_lifecycle::State& previous_state)
 {
    RCLCPP_DEBUG(kLogger, "on_configure");
+
+   if(hardware_interface::SystemInterface::on_configure(previous_state) != CallbackReturn::SUCCESS)
+   {
+      return CallbackReturn::ERROR;
+   }
+
    try
    {
-      if(hardware_interface::SystemInterface::on_configure(previous_state) != CallbackReturn::SUCCESS)
-      {
-         return CallbackReturn::ERROR;
-      }
-
-      // Open the serial port and handshake.
-      bool connected = driver_->connect();
-      if(!connected)
-      {
-         RCLCPP_ERROR(kLogger, "Cannot connect to the Robotiq gripper");
-         return CallbackReturn::ERROR;
-      }
+      gripper_ = create_gripper();
    }
    catch(const std::exception& e)
    {
-      RCLCPP_ERROR(kLogger, "Cannot configure the Robotiq gripper: %s", e.what());
+      RCLCPP_ERROR(kLogger, "Cannot connect to the Robotiq gripper: %s", e.what());
       return CallbackReturn::ERROR;
    }
+
+   RCLCPP_INFO(kLogger,
+               "Connected to the Robotiq gripper on %s at %u bps (slave address 0x%02X), exchanging at %.1f Hz.",
+               parameters_.connection.serial.port.c_str(),
+               parameters_.connection.serial.baudrate,
+               parameters_.connection.modbusSlaveAddress,
+               parameters_.connection.connectionFrequency);
+   return CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqGripperHardwareInterface::on_cleanup(
+   const rclcpp_lifecycle::State& /*previous_state*/)
+{
+   RCLCPP_DEBUG(kLogger, "on_cleanup");
+
+   // An in-flight recovery borrows the gripper; let it finish first.
+   if(recovery_.valid())
+   {
+      recovery_.wait();
+      recovery_ = {};
+   }
+   gripper_.reset();
+
    return CallbackReturn::SUCCESS;
 }
 
@@ -208,17 +253,14 @@ std::vector<hardware_interface::CommandInterface> RobotiqGripperHardwareInterfac
 
    command_interfaces.emplace_back(
       hardware_interface::CommandInterface(info_.joints[0].name, "set_gripper_max_velocity", &gripper_speed_));
-   gripper_speed_ = kGripperMaxSpeed
-                  * (info_.hardware_parameters.count("gripper_speed_multiplier")
-                        ? std::stod(info_.hardware_parameters.at("gripper_speed_multiplier"))
-                        : 1.0);
+   // Seeded from the shipped full scale, not from parameters_.max_speed /
+   // max_force: a description that lowers those gets a seed above its own
+   // full scale, which write() then clamps to the top register value.
+   gripper_speed_ = kMaxSpeedDefault * parameters_.speed_multiplier;
 
    command_interfaces.emplace_back(
       hardware_interface::CommandInterface(info_.joints[0].name, "set_gripper_max_effort", &gripper_force_));
-   gripper_force_ = kGripperMaxforce
-                  * (info_.hardware_parameters.count("gripper_force_multiplier")
-                        ? std::stod(info_.hardware_parameters.at("gripper_force_multiplier"))
-                        : 1.0);
+   gripper_force_ = kMaxForceDefault * parameters_.force_multiplier;
 
    command_interfaces.emplace_back(
       hardware_interface::CommandInterface("reactivate_gripper", "reactivate_gripper_cmd", &reactivate_gripper_cmd_));
@@ -234,6 +276,12 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_activate(
 {
    RCLCPP_DEBUG(kLogger, "on_activate");
 
+   if(!gripper_)
+   {
+      RCLCPP_FATAL(kLogger, "on_activate reached without a configured gripper.");
+      return CallbackReturn::ERROR;
+   }
+
    // set some default values for joints
    if(std::isnan(gripper_position_))
    {
@@ -242,18 +290,16 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_activate(
       gripper_position_command_ = 0;
    }
 
-   // Activate the gripper.
-   try
+   // recoverFromFault(), not activate(): the manual's reset handshake, which
+   // clears a latched fault and runs the calibration sweep. Activating
+   // therefore releases any grip and sweeps the fingers.
+   const Robotiq::ActivationResult result = Robotiq::recoverFromFault(*gripper_, parameters_.activation_timeout);
+   if(result != Robotiq::ActivationResult::Activated)
    {
-      driver_->deactivate();
-      driver_->activate();
-
-      communication_thread_is_running_.store(true);
-      communication_thread_ = std::thread([this] { this->background_task(); });
-   }
-   catch(const std::exception& e)
-   {
-      RCLCPP_FATAL(kLogger, "Failed to communicate with the Robotiq gripper: %s", e.what());
+      // recoverFromFault() reports only Activated or Timeout.
+      RCLCPP_FATAL(kLogger,
+                   "Failed to communicate with the Robotiq gripper: activation did not complete within %d ms.",
+                   static_cast<int>(parameters_.activation_timeout.count()));
       return CallbackReturn::ERROR;
    }
 
@@ -266,22 +312,31 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_deactivat
 {
    RCLCPP_DEBUG(kLogger, "on_deactivate");
 
-   communication_thread_is_running_.store(false);
-   communication_thread_.join();
-   if(communication_thread_.joinable())
+   // An in-flight GPIO recovery drives rACT itself: resetting over it races
+   // the handshake, which could re-assert rACT after the reset below and
+   // leave the gripper activated. Let it finish first — read() still
+   // reports its result.
+   if(recovery_.valid())
    {
-      communication_thread_.join();
+      recovery_.wait();
    }
 
-   try
+   if(gripper_)
    {
-      driver_->deactivate();
+      // Zeroing the whole command block clears rACT, which resets the
+      // gripper, so it releases any grip.
+      gripper_->setCommand(Robotiq::GripperCommand{});
+
+      // The exchange is asynchronous: without waiting for the gripper to
+      // report the reset, a cleanup following closely can stop the exchange
+      // cycle before the command goes out, leaving the gripper activated.
+      if(!Robotiq::waitFor([this] { return !gripper_->getStatus().gripperStatus.activated(); }, kDeactivationTimeout))
+      {
+         RCLCPP_ERROR(kLogger, "Failed to deactivate the Robotiq gripper: it did not clear its activation bit.");
+         return CallbackReturn::ERROR;
+      }
    }
-   catch(const std::exception& e)
-   {
-      RCLCPP_ERROR(kLogger, "Failed to deactivate the Robotiq gripper: %s", e.what());
-      return CallbackReturn::ERROR;
-   }
+
    RCLCPP_INFO(kLogger, "Robotiq Gripper successfully deactivated!");
    return CallbackReturn::SUCCESS;
 }
@@ -289,19 +344,72 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_deactivat
 hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclcpp::Time& /*time*/,
                                                                       const rclcpp::Duration& /*period*/)
 {
-   gripper_position_ = gripper_closed_pos_ * (gripper_current_state_.load() - kGripperMinPos) / kGripperRange;
+   if(!gripper_)
+   {
+      return hardware_interface::return_type::ERROR;
+   }
+
+   const Robotiq::GripperStatus status = gripper_->getStatus();
+   gripper_position_ = jointPositionFromRegister(status.position, parameters_.closed_position);
+   // The status block carries no velocity — the gripper reports position and
+   // motor current only.
+   gripper_velocity_ = 0.0;
+
+   // A faulted link recovers by itself on the next successful exchange, so
+   // this warns rather than errors; the position above is the last good
+   // reading until it does.
+   if(const Robotiq::ConnectionState connection = gripper_->connectionState();
+      connection != Robotiq::ConnectionState::Operational)
+   {
+      RCLCPP_WARN_THROTTLE(kLogger,
+                           diagnostic_clock(),
+                           kDiagnosticThrottleMs,
+                           "The Robotiq gripper link is %s; the reported position may be stale.",
+                           to_string(connection));
+   }
+
+   if(status.faultStatus.gripperFault() != Robotiq::GripperFault::None)
+   {
+      RCLCPP_WARN_THROTTLE(kLogger,
+                           diagnostic_clock(),
+                           kDiagnosticThrottleMs,
+                           "The Robotiq gripper reports fault status 0x%02X.",
+                           status.faultStatus.raw());
+   }
 
    if(!std::isnan(reactivate_gripper_cmd_))
    {
-      RCLCPP_INFO(kLogger, "Sending gripper reactivation request.");
-      reactivate_gripper_async_cmd_.store(true);
       reactivate_gripper_cmd_ = NO_NEW_CMD_;
+      if(recovery_.valid())
+      {
+         RCLCPP_WARN(kLogger, "A gripper recovery is already running; ignoring the reactivation request.");
+      }
+      else
+      {
+         RCLCPP_INFO(kLogger,
+                     "Recovering the Robotiq gripper: the reset releases any grip and sweeps the fingers through "
+                     "their full range.");
+         recovery_ = std::async(std::launch::async, [this] {
+            return Robotiq::recoverFromFault(*gripper_, parameters_.activation_timeout);
+         });
+      }
    }
 
-   if(reactivate_gripper_async_response_.load().has_value())
+   if(has_finished(recovery_))
    {
-      reactivate_gripper_response_ = reactivate_gripper_async_response_.load().value();
-      reactivate_gripper_async_response_.store(std::nullopt);
+      const Robotiq::ActivationResult result = recovery_.get();
+      recovery_ = {};
+      if(result == Robotiq::ActivationResult::Activated)
+      {
+         reactivate_gripper_response_ = 1.0;
+         RCLCPP_INFO(kLogger, "The Robotiq gripper recovered and is activated.");
+      }
+      else
+      {
+         // The response interface only ever reports success; a failure leaves
+         // it as it was.
+         RCLCPP_ERROR(kLogger, "The Robotiq gripper failed to recover.");
+      }
    }
 
    return hardware_interface::return_type::OK;
@@ -310,48 +418,33 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclc
 hardware_interface::return_type RobotiqGripperHardwareInterface::write(const rclcpp::Time& /*time*/,
                                                                        const rclcpp::Duration& /*period*/)
 {
-   double gripper_pos = (gripper_position_command_ / gripper_closed_pos_) * kGripperRange + kGripperMinPos;
-   gripper_pos = std::max(std::min(gripper_pos, 255.0), 0.0);
-   write_command_.store(uint8_t(gripper_pos));
-   const auto gripper_speed_multiplier = std::clamp(fabs(gripper_speed_) / gripper_max_speed_, 0.0, 1.0);
-   write_speed_.store(uint8_t(gripper_speed_multiplier * 0xFF));
-   const auto gripper_force_multiplier = std::clamp(fabs(gripper_force_) / gripper_max_force_, 0.0, 1.0);
-   write_force_.store(uint8_t(gripper_force_multiplier * 0xFF));
+   if(!gripper_)
+   {
+      return hardware_interface::return_type::ERROR;
+   }
+
+   // The recovery handshake drives rACT itself; commanding over it would
+   // abort the reset half-way through.
+   if(recovery_.valid())
+   {
+      return hardware_interface::return_type::OK;
+   }
+
+   // Before a controller has written a setpoint there is nothing to command,
+   // and a NaN would convert to a garbage register value.
+   if(std::isnan(gripper_position_command_))
+   {
+      return hardware_interface::return_type::OK;
+   }
+
+   Robotiq::GripperCommand command = Robotiq::GripperCommand::defaults();
+   command.action.set(Robotiq::ActionRequestBit::GoTo);
+   command.positionRequest = registerFromJointPosition(gripper_position_command_, parameters_.closed_position);
+   command.speed = registerFromFractionOf(gripper_speed_, parameters_.max_speed);
+   command.force = registerFromFractionOf(gripper_force_, parameters_.max_force);
+   gripper_->setCommand(command);
 
    return hardware_interface::return_type::OK;
-}
-
-void RobotiqGripperHardwareInterface::background_task()
-{
-   while(communication_thread_is_running_.load())
-   {
-      try
-      {
-         // Re-activate the gripper
-         // (this can be used, for example, to re-run the auto-calibration).
-         if(reactivate_gripper_async_cmd_.load())
-         {
-            this->driver_->deactivate();
-            this->driver_->activate();
-            reactivate_gripper_async_cmd_.store(false);
-            reactivate_gripper_async_response_.store(true);
-         }
-
-         // Write the latest command to the gripper.
-         this->driver_->set_gripper_position(write_command_.load());
-         this->driver_->set_speed(write_speed_.load());
-         this->driver_->set_force(write_force_.load());
-
-         // Read the state of the gripper.
-         gripper_current_state_.store(this->driver_->get_gripper_position());
-      }
-      catch(std::exception& e)
-      {
-         RCLCPP_ERROR(kLogger, "Error: %s", e.what());
-      }
-
-      std::this_thread::sleep_for(kGripperCommsLoopPeriod);
-   }
 }
 
 } // namespace robotiq_driver

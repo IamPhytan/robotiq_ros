@@ -29,7 +29,16 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cmath>
+#include <future>
+#include <string>
+#include <thread>
+
 #include <hardware_interface/resource_manager.hpp>
+#include <hardware_interface/types/lifecycle_state_names.hpp>
+#include <lifecycle_msgs/msg/state.hpp>
+#include <rclcpp_lifecycle/state.hpp>
 #if __has_include(<hardware_interface/hardware_interface/version.h>)
 #include <hardware_interface/hardware_interface/version.h>
 #else
@@ -38,13 +47,20 @@
 
 #include <rclcpp/node.hpp>
 
+#include <robotiq_driver/hardware_interface.hpp>
+
+#include <Robotiq/gripper/wait.hpp>
+
 namespace robotiq_driver::test {
 
 namespace {
-std::string minimal_robot_urdf()
+constexpr auto kComponentName = "robotiq_driver_ros2_control";
+
+//! \p extra_hardware_params is spliced into the <hardware> block, so a test
+//! can select a backend without restating the whole description.
+std::string minimal_robot_urdf(const std::string& extra_hardware_params = "")
 {
-   return
-      R"(
+   return std::string(R"(
         <?xml version="1.0" encoding="utf-8"?>
         <robot name="test_robot">
           <link name="robotiq_85_base_link"/>
@@ -63,6 +79,8 @@ std::string minimal_robot_urdf()
               <param name="gripper_force_multiplier">0.5</param>
               <param name="COM_port">/dev/ttyUSB0</param>
               <param name="gripper_closed_position">0.7929</param>
+              )")
+        + extra_hardware_params + R"(
             </hardware>
             <joint name="robotiq_85_left_knuckle_joint">
               <command_interface name="position" />
@@ -71,6 +89,10 @@ std::string minimal_robot_urdf()
               </state_interface>
               <state_interface name="velocity"/>
             </joint>
+            <gpio name="reactivate_gripper">
+              <command_interface name="reactivate_gripper_cmd" />
+              <command_interface name="reactivate_gripper_response" />
+            </gpio>
           </ros2_control>
         </robot>
         )";
@@ -120,7 +142,111 @@ TEST(TestRobotiqGripperHardwareInterface, exports_expected_command_interfaces)
    EXPECT_THAT(keys,
                testing::IsSupersetOf({"robotiq_85_left_knuckle_joint/position",
                                       "robotiq_85_left_knuckle_joint/set_gripper_max_velocity",
-                                      "robotiq_85_left_knuckle_joint/set_gripper_max_effort"}));
+                                      "robotiq_85_left_knuckle_joint/set_gripper_max_effort",
+                                      "reactivate_gripper/reactivate_gripper_cmd",
+                                      "reactivate_gripper/reactivate_gripper_response"}));
+}
+
+/**
+ * use_dummy brings the component all the way up with no gripper and no serial
+ * port, and the joint position then follows the commanded position. It is the
+ * only hardware-free path that exercises the real plugin — and therefore the
+ * gripper and activation controllers, which bind to interfaces the
+ * ros2_control mock does not export.
+ */
+TEST(TestRobotiqGripperHardwareInterface, use_dummy_activates_and_follows_commands)
+{
+   const std::string urdf = minimal_robot_urdf(R"(<param name="use_dummy">true</param>)");
+
+   rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
+
+#if HARDWARE_INTERFACE_VERSION_GTE(4, 13, 0)
+   hardware_interface::ResourceManager rm(urdf, node.get_node_clock_interface(), node.get_node_logging_interface());
+#else
+   hardware_interface::ResourceManager rm(urdf);
+#endif
+
+   rclcpp_lifecycle::State active{lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE,
+                                  hardware_interface::lifecycle_state_names::ACTIVE};
+   ASSERT_EQ(hardware_interface::return_type::OK, rm.set_component_state(kComponentName, active))
+      << "the dummy backend failed to configure and activate";
+
+   const rclcpp::Time time{0};
+   const rclcpp::Duration period = rclcpp::Duration::from_seconds(0.01);
+
+   auto position = rm.claim_state_interface("robotiq_85_left_knuckle_joint/position");
+   auto command = rm.claim_command_interface("robotiq_85_left_knuckle_joint/position");
+
+   // Half closed, in joint radians against the 0.7929 closed position.
+   constexpr double kTarget = 0.4;
+   const bool success = command.set_value(kTarget);
+   ASSERT_TRUE(success);
+   ASSERT_EQ(hardware_interface::return_type::OK, rm.write(time, period).result);
+
+   // The simulated gripper teleports, but the SDK's exchange cycle still has
+   // to carry the command and bring the status back.
+   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+   bool reached = false;
+   while(!reached && std::chrono::steady_clock::now() < deadline)
+   {
+      ASSERT_EQ(hardware_interface::return_type::OK, rm.read(time, period).result);
+      reached = std::abs(position.get_optional().value_or(0.0) - kTarget) < 0.01;
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+   }
+   EXPECT_TRUE(reached) << "joint position never followed the command; last read "
+                        << position.get_optional().value_or(0.0);
+}
+
+namespace {
+//! White-box handle on the plugin: drives the lifecycle callbacks directly
+//! over the SDK's fake gripper, with the exchange slowed down so the recovery
+//! handshake spans many control cycles.
+class RecoveringGripper : public RobotiqGripperHardwareInterface
+{
+public:
+   RecoveringGripper()
+   {
+      parameters_.use_dummy = true;
+      parameters_.closed_position = 0.7929;
+      parameters_.connection.connectionFrequency = 20.0;
+   }
+
+   void request_recovery() { reactivate_gripper_cmd_ = 1.0; }
+   bool recovery_in_flight() const { return recovery_.valid(); }
+   bool recovery_has_finished() const
+   {
+      return recovery_.valid() && recovery_.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+   }
+   bool gripper_activated() const { return gripper_->getStatus().gripperStatus.activated(); }
+};
+} // namespace
+
+/**
+ * A GPIO recovery runs the reset handshake on a background thread. A
+ * deactivation arriving while it is in flight must wait for it: both drive
+ * rACT, and racing them lets the recovery re-assert rACT after the reset,
+ * leaving the gripper activated after on_deactivate reported success.
+ */
+TEST(TestRobotiqGripperHardwareInterface, deactivation_waits_for_an_in_flight_recovery)
+{
+   RecoveringGripper gripper;
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+   gripper.request_recovery();
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   ASSERT_TRUE(gripper.recovery_in_flight());
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
+   EXPECT_TRUE(gripper.recovery_has_finished()) << "on_deactivate returned while the recovery was still running";
+   // The gripper must end deactivated and stay there: unserialized, the
+   // recovery re-asserts rACT a few exchange cycles after the reset.
+   EXPECT_FALSE(Robotiq::waitFor([&] { return gripper.gripper_activated(); }, std::chrono::milliseconds{500}));
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
 }
 
 } // namespace robotiq_driver::test

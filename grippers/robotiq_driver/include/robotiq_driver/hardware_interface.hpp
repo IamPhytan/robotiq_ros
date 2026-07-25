@@ -1,4 +1,5 @@
 // Copyright (c) 2022 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -26,18 +27,25 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief ros2_control system interface for Robotiq 2F grippers, wrapping the
+//!        Robotiq gripper SDK.
+//! The SDK owns the serial link and runs its own exchange cycle, keeping a
+//! process image that setCommand()/getStatus() reach without touching the bus.
+//! read() and write() are therefore pure memory operations against that image
+//! and never block the controller manager — this package runs no communication
+//! thread of its own.
+
 #pragma once
 
-#include <atomic>
+#include <future>
 #include <limits>
 #include <memory>
-#include <string>
 #include <vector>
 
+#include <robotiq_driver/hardware_parameters.hpp>
 #include <robotiq_driver/visibility_control.hpp>
 
-#include <robotiq_driver/driver.hpp>
-#include <robotiq_driver/driver_factory.hpp>
+#include <Robotiq/gripper.hpp>
 
 #include <hardware_interface/handle.hpp>
 #include <hardware_interface/hardware_info.hpp>
@@ -53,24 +61,15 @@ class RobotiqGripperHardwareInterface : public hardware_interface::SystemInterfa
 public:
    RCLCPP_SHARED_PTR_DEFINITIONS(RobotiqGripperHardwareInterface)
 
-   /**
-    * Default constructor.
-    */
    ROBOTIQ_DRIVER_PUBLIC
    RobotiqGripperHardwareInterface();
 
    ROBOTIQ_DRIVER_PUBLIC
-   ~RobotiqGripperHardwareInterface();
+   ~RobotiqGripperHardwareInterface() override;
 
    /**
-    * Constructor with a driver factory. This method is used for testing.
-    * @param driver_factory The driver that interact with the hardware.
-    */
-   explicit RobotiqGripperHardwareInterface(std::unique_ptr<DriverFactory> driver_factory);
-
-   /**
-    * Initialization of the hardware interface from data parsed from the
-    * robot's URDF.
+    * Read and validate the hardware parameters and the joint's interfaces.
+    * Performs no I/O — the link is opened in on_configure.
     * @param params Structure with parameters for initializing this hardware component.
     * @returns CallbackReturn::SUCCESS if required data are provided and can be
     * parsed or CallbackReturn::ERROR if any error happens or data are missing.
@@ -79,13 +78,21 @@ public:
    CallbackReturn on_init(const hardware_interface::HardwareComponentInterfaceParams& params) override;
 
    /**
-    * Connect to the hardware.
+    * Open the serial link and start the SDK exchange cycle. Constructing the
+    * gripper reads it once, so a gripper that is unpowered, unplugged or at
+    * another slave address fails here rather than at the first read().
     * @param previous_state The previous state.
-    * @returns CallbackReturn::SUCCESS if required data are provided and can be
-    * parsed or CallbackReturn::ERROR if any error happens or data are missing.
+    * @returns CallbackReturn::SUCCESS or CallbackReturn::ERROR.
     */
    ROBOTIQ_DRIVER_PUBLIC
    CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
+
+   /**
+    * Stop the exchange cycle and close the link. The gripper keeps its
+    * activation and its grip.
+    */
+   ROBOTIQ_DRIVER_PUBLIC
+   CallbackReturn on_cleanup(const rclcpp_lifecycle::State& previous_state) override;
 
    /**
     * This method exposes position and velocity of joints for reading.
@@ -100,7 +107,8 @@ public:
    std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
    /**
-    * This method is invoked when the hardware is connected.
+    * Reset and activate the gripper, blocking until it reports completion.
+    *
     * @param previous_state Unconfigured, Inactive, Active or Finalized.
     * @returns CallbackReturn::SUCCESS or CallbackReturn::ERROR.
     */
@@ -108,7 +116,6 @@ public:
    CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
 
    /**
-    * This method is invoked when the hardware is disconnected.
     * @param previous_state Unconfigured, Inactive, Active or Finalized.
     * @returns CallbackReturn::SUCCESS or CallbackReturn::ERROR.
     */
@@ -128,20 +135,26 @@ public:
    hardware_interface::return_type write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 protected:
-   // Interface to send binary data to the hardware using the serial port.
-   std::unique_ptr<Driver> driver_;
+   /**
+    * @throw Robotiq::SerialIOException, Robotiq::DriverException as the
+    *        Robotiq::Gripper constructor does.
+    */
+   virtual std::unique_ptr<Robotiq::Gripper> create_gripper();
 
-   // Factory to create the driver during the initialization step.
-   std::unique_ptr<DriverFactory> driver_factory_;
+   GripperParameters parameters_;
 
-   // We use a thread to read/write to the driver so that we dont block the hardware_interface read/write.
-   std::thread communication_thread_;
-   std::atomic<bool> communication_thread_is_running_;
-   void background_task();
+   // Log sink handed to the SDK, forwarding its diagnostics to /rosout.
+   std::shared_ptr<Robotiq::Logger> logger_;
 
-   double gripper_closed_pos_ = 0.0;
-   double gripper_max_speed_ = 0.0;
-   double gripper_max_force_ = 0.0;
+   // Owns the serial link and the exchange thread; null until on_configure.
+   std::unique_ptr<Robotiq::Gripper> gripper_;
+
+   // recoverFromFault() blocks for the length of a calibration sweep, so the
+   // reactivate_gripper GPIO runs it off the control loop.
+   // Declared after gripper_ on purpose: destruction runs in reverse, so an
+   // std::async future here is joined before the gripper it borrows is
+   // destroyed.
+   std::future<Robotiq::ActivationResult> recovery_;
 
    static constexpr double NO_NEW_CMD_ = std::numeric_limits<double>::quiet_NaN();
 
@@ -149,17 +162,10 @@ protected:
    double gripper_velocity_ = 0.0;
    double gripper_position_command_ = 0.0;
 
-   std::atomic<uint8_t> write_command_;
-   std::atomic<uint8_t> write_force_;
-   std::atomic<uint8_t> write_speed_;
-   std::atomic<uint8_t> gripper_current_state_;
-
    double reactivate_gripper_cmd_ = 0.0;
-   std::atomic<bool> reactivate_gripper_async_cmd_;
    double reactivate_gripper_response_ = 0.0;
    double gripper_force_ = 0.0;
    double gripper_speed_ = 0.0;
-   std::atomic<std::optional<bool>> reactivate_gripper_async_response_;
 };
 
 } // namespace robotiq_driver
