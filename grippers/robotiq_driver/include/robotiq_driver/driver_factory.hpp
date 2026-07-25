@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,27 +26,17 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Removed header, kept as a signpost.
+//! This package no longer implements its own gripper driver: the transport,
+//! the register map and the runtime API all come from the Robotiq gripper SDK
+//! (extern/grippers). The header you included went with that change.
+//!
+//! There is no driver factory. Construct a Robotiq::Gripper from a Robotiq::ConnectionConfig, or
+//! Robotiq::makeFakeGripper() for a simulated one.
+//!
+//! This shim exists so the build stops here with an explanation rather than
+//! with a missing-file error. It will be deleted in a future release.
+
 #pragma once
 
-#include <memory>
-
-#include <hardware_interface/hardware_info.hpp>
-
-#include <robotiq_driver/driver.hpp>
-
-namespace robotiq_driver {
-/**
- * The hardware interface internally uses a factory to create and configure a
- * driver to interact with the Robotiq Gripper.
- * A factory is used to keep the code cleaner but also to simplify testing.
- * With a factory, we can test that the parameters read by the hardware
- * interface are correctly parsed and passed down to the driver.
- * A factory can also be mocked to return different implementation of the
- * Driver (or mocks) that do not require interaction with the real hardware.
- */
-class DriverFactory
-{
-public:
-   virtual std::unique_ptr<Driver> create(const hardware_interface::HardwareInfo& info) const = 0;
-};
-} // namespace robotiq_driver
+#error "robotiq_driver/driver_factory.hpp was removed: construct Robotiq::Gripper directly."

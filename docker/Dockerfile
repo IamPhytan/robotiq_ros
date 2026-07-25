@@ -22,7 +22,7 @@ ENV TZ=Etc/UTC
 # build deps (ros2_control stack).
 RUN apt-get update && apt-get install -y \
         pkg-config \
-        python3-colcon-common-extensions python3-vcstool python3-rosdep \
+        python3-colcon-common-extensions python3-rosdep \
         libserialport-dev \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
@@ -47,9 +47,6 @@ RUN touch /ws/src/extern/tactile_sensors/sdk_cpp/COLCON_IGNORE
 # compiles here too.
 COPY extern/grippers/sdk_cpp /ws/src/extern/grippers/sdk_cpp
 RUN touch /ws/src/extern/grippers/sdk_cpp/COLCON_IGNORE
-
-# Gripper's external `serial` dep (tylerjw/serial), via the upstream .repos file.
-RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
 
 # Resolve remaining rosdeps (build + exec only — NOT test deps, e.g.
 # ament_clang_tidy → clang-tools), then build Release. No --symlink-install, so

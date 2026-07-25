@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,38 +26,20 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Compatibility shim for the removed robotiq_driver exception type.
+//! This package no longer implements its own gripper driver; the SDK's
+//! Robotiq::DriverException took over. The alias below keeps existing
+//! `catch(const robotiq_driver::DriverException&)` sites compiling and
+//! catching the same failures.
+//!
+//! Deprecated: include <Robotiq/gripper/driver_exception.hpp> and use
+//! Robotiq::DriverException directly. This shim will be deleted in a future
+//! release.
+
 #pragma once
 
-#include <exception>
-#include <string>
-#include <sstream>
+#include <Robotiq/gripper/driver_exception.hpp>
 
 namespace robotiq_driver {
-/**
- * This is a custom exception thrown by the Driver.
- */
-class DriverException : public std::exception
-{
-   std::string what_;
-
-public:
-   explicit DriverException(const std::string& description)
-   {
-      std::stringstream ss;
-      ss << "DriverException: " << description << ".";
-      what_ = ss.str();
-   }
-
-   DriverException(const DriverException& other)
-      : what_(other.what_)
-   {
-   }
-
-   ~DriverException() override = default;
-
-   // Disable copy constructors
-   DriverException& operator=(const DriverException&) = delete;
-
-   [[nodiscard]] const char* what() const throw() override { return what_.c_str(); }
-};
+using DriverException = Robotiq::DriverException;
 } // namespace robotiq_driver

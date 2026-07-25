@@ -15,7 +15,6 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
-find_package(serial REQUIRED)
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   ament_cmake
@@ -23,15 +22,14 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   pluginlib
   rclcpp
   rclcpp_lifecycle
-  serial
 )
 
 ###############################################################################
 # GRIPPER SDK
 
 # The Modbus transport, the typed register blocks and the Robotiq::Gripper
-# runtime API live in the extern/grippers submodule; the hardware interface
-# below drives the gripper through it.
+# runtime API live in the extern/grippers submodule; this package is the
+# ros2_control wrapper over them.
 #
 # EXCLUDE_FROM_ALL skips the SDK's own install/export rules: it is compiled
 # into robotiq_driver, not shipped as a second installed package.
@@ -58,7 +56,14 @@ set_target_properties(grippers_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(
   robotiq_driver
   SHARED
-  include/robotiq_driver/fake/fake_driver.hpp
+  include/robotiq_driver/gripper_scaling.hpp
+  include/robotiq_driver/hardware_interface.hpp
+  include/robotiq_driver/hardware_parameters.hpp
+  include/robotiq_driver/rclcpp_logger.hpp
+  include/robotiq_driver/visibility_control.hpp
+  # Signposts for the headers this package used to install, so downstream
+  # code that includes one stops with an explanation instead of a
+  # missing-file error. See the migration notes in the repository README.
   include/robotiq_driver/crc_utils.hpp
   include/robotiq_driver/data_utils.hpp
   include/robotiq_driver/default_driver.hpp
@@ -68,42 +73,31 @@ add_library(
   include/robotiq_driver/driver.hpp
   include/robotiq_driver/driver_exception.hpp
   include/robotiq_driver/driver_factory.hpp
-  include/robotiq_driver/gripper_scaling.hpp
-  include/robotiq_driver/hardware_interface.hpp
-  include/robotiq_driver/hardware_parameters.hpp
-  include/robotiq_driver/rclcpp_logger.hpp
+  include/robotiq_driver/fake/fake_driver.hpp
   include/robotiq_driver/serial.hpp
   include/robotiq_driver/serial_factory.hpp
-  include/robotiq_driver/visibility_control.hpp
-  src/crc_utils.cpp
-  src/data_utils.cpp
   src/hardware_interface.cpp
-  src/default_driver.cpp
-  src/default_driver_factory.cpp
-  src/fake/fake_driver.cpp
-  src/default_serial.cpp
-  src/default_serial_factory.cpp
   src/hardware_parameters.cpp
   src/rclcpp_logger.cpp
 )
-target_link_libraries(robotiq_driver atomic)
 target_include_directories(
   robotiq_driver
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  # The SDK's headers are part of this package's public API: the adapters here
-  # take Robotiq types, so downstream compilations have to see them too. They
-  # are installed next to ours below, hence the single install interface.
+  # The SDK's headers are part of this package's public API: hardware_interface.hpp
+  # holds a Robotiq::Gripper, so downstream compilations have to see it too.
+  # They are installed next to ours below, hence the single install interface.
   $<BUILD_INTERFACE:${GRIPPERS_SDK_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(
   robotiq_driver
+  PUBLIC
   hardware_interface::hardware_interface
   pluginlib::pluginlib
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
-  serial::serial
+  PRIVATE
   # $<BUILD_INTERFACE:...> keeps the statically-linked SDK out of the installed
   # export set, where there would be no target for it to resolve to.
   # WHOLE_ARCHIVE (CMake 3.24+, satisfied from Jazzy's 24.04 on) because the
@@ -160,7 +154,7 @@ install(
 )
 
 # The SDK headers ship alongside ours: they are reachable from this package's
-# public headers, so a consumer including them needs these too.
+# public headers, so a consumer including hardware_interface.hpp needs them.
 #
 # The pattern assumes the SDK is .hpp-only, which it is today. Anything else it
 # starts shipping — a C shim, a generated config header — would be dropped here
