@@ -33,8 +33,9 @@ jobs:
       # ros-base is minimal: it lacks git (needed by actions/checkout) and the
       # colcon coverage plugins that action-ros-ci invokes by default
       # (colcon lcov-result / coveragepy-result). Install them up front.
-      # libserialport-dev: the SDK's serial backend — no rosdep rule exists for
-      # the bare `libserialport` key, so install it directly and skip the key.
+      # libserialport-dev: the serial backend of both SDKs — no rosdep rule
+      # exists for the bare `libserialport` key, so install it directly and
+      # skip the key.
       - name: Install tooling missing from ros-base
         run: |
           apt-get update
@@ -42,8 +43,8 @@ jobs:
             python3-colcon-lcov-result python3-colcon-coveragepy-result
       - uses: actions/checkout@v5
         with:
-          # poll_data_sdk_node compiles the tactile_sensors SDK from the
-          # extern/ submodule.
+          # Both SDKs are compiled from source out of extern/: tactile_sensors
+          # by robotiq_tsf's poll_data_sdk_node, grippers by robotiq_driver.
           submodules: true
       # action-ros-ci runs git against the checkout as root inside the container;
       # mark it safe to avoid git's "dubious ownership" error.

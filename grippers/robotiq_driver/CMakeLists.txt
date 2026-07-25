@@ -26,6 +26,34 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   serial
 )
 
+###############################################################################
+# GRIPPER SDK
+
+# The Modbus transport, the typed register blocks and the Robotiq::Gripper
+# runtime API live in the extern/grippers submodule. Nothing links against it
+# yet — the hardware interface still runs the in-tree driver — but the build
+# wiring and the adapters below land first so the switch is a diff about
+# behaviour and nothing else.
+#
+# EXCLUDE_FROM_ALL skips the SDK's own install/export rules: it is compiled
+# into robotiq_driver, not shipped as a second installed package.
+set(GRIPPERS_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../extern/grippers/sdk_cpp")
+if(NOT EXISTS "${GRIPPERS_SDK_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "The gripper SDK is missing from ${GRIPPERS_SDK_DIR}. "
+    "Run `git submodule update --init extern/grippers` at the repository root.")
+endif()
+# The SDK declares its library without STATIC or SHARED, so it follows
+# BUILD_SHARED_LIBS. Nothing installs it, so a shared one would leave the
+# plugin needing a library that does not ship. Pinned for this subtree only;
+# the enclosing project keeps its own setting.
+set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(${GRIPPERS_SDK_DIR} ${CMAKE_CURRENT_BINARY_DIR}/grippers_sdk EXCLUDE_FROM_ALL)
+unset(BUILD_SHARED_LIBS)
+# A static archive going into a shared plugin has to be position-independent.
+set_target_properties(grippers_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+###############################################################################
 # Robotiq driver library.
 
 add_library(
@@ -41,7 +69,10 @@ add_library(
   include/robotiq_driver/driver.hpp
   include/robotiq_driver/driver_exception.hpp
   include/robotiq_driver/driver_factory.hpp
+  include/robotiq_driver/gripper_scaling.hpp
   include/robotiq_driver/hardware_interface.hpp
+  include/robotiq_driver/hardware_parameters.hpp
+  include/robotiq_driver/rclcpp_logger.hpp
   include/robotiq_driver/serial.hpp
   include/robotiq_driver/serial_factory.hpp
   include/robotiq_driver/visibility_control.hpp
@@ -53,12 +84,18 @@ add_library(
   src/fake/fake_driver.cpp
   src/default_serial.cpp
   src/default_serial_factory.cpp
+  src/hardware_parameters.cpp
+  src/rclcpp_logger.cpp
 )
 target_link_libraries(robotiq_driver atomic)
 target_include_directories(
   robotiq_driver
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  # The SDK's headers are part of this package's public API: the adapters here
+  # take Robotiq types, so downstream compilations have to see them too. They
+  # are installed next to ours below, hence the single install interface.
+  $<BUILD_INTERFACE:${GRIPPERS_SDK_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(
@@ -68,6 +105,13 @@ target_link_libraries(
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
   serial::serial
+  # $<BUILD_INTERFACE:...> keeps the statically-linked SDK out of the installed
+  # export set, where there would be no target for it to resolve to.
+  # WHOLE_ARCHIVE (CMake 3.24+, satisfied from Jazzy's 24.04 on) because the
+  # SDK's headers ship with this package: a consumer may call any SDK entry
+  # point, so every SDK object has to land in the library — not just the
+  # ones the wrapper itself references.
+  $<BUILD_INTERFACE:$<LINK_LIBRARY:WHOLE_ARCHIVE,Robotiq::grippers>>
 )
 
 ###############################################################################
@@ -111,6 +155,14 @@ install(
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}          # include
 )
 
+# The SDK headers ship alongside ours: they are reachable from this package's
+# public headers, so a consumer including them needs these too.
+install(
+    DIRECTORY ${GRIPPERS_SDK_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}          # include
+    FILES_MATCHING PATTERN "*.hpp"                   # not the SDK's own CMakeLists
+)
+
 # Install our library.
 install(
   TARGETS robotiq_driver
@@ -130,15 +182,5 @@ include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
-
-###############################################################################
-# LINTERS
-
-add_custom_target(format
-    COMMAND clang-format -i `git ls-files *.hpp *.cpp`
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-add_custom_target(tidy
-    COMMAND clang-tidy -p ${CMAKE_BINARY_DIR} `git ls-files *.cpp`
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 ament_package()

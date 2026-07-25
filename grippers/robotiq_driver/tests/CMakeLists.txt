@@ -70,3 +70,18 @@ target_include_directories(test_data_utils
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 )
 target_link_libraries(test_data_utils robotiq_driver)
+
+###############################################################################
+# robotiq_driver_tests
+
+# One gmock binary for the whole package, so the suite runs — and debugs — as a
+# single target. Pick a subset with --gtest_filter.
+ament_add_gmock(${PROJECT_NAME}_tests
+    test_gripper_scaling.cpp      # register <-> joint arithmetic
+    test_hardware_parameters.cpp  # HardwareInfo -> ConnectionConfig
+    test_rclcpp_logger.cpp        # SDK log sink -> /rosout
+)
+target_include_directories(${PROJECT_NAME}_tests
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(${PROJECT_NAME}_tests robotiq_driver)

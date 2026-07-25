@@ -231,6 +231,18 @@ If you already cloned without `--recurse-submodules`:
 git submodule update --init
 ```
 
+Two SDKs live under `extern/` as submodules and are built into the image:
+
+| Submodule | Repository | Used by |
+|---|---|---|
+| `extern/tactile_sensors` | [Robotiq/tactile_sensors](https://github.com/Robotiq/tactile_sensors) | `robotiq_tsf`'s `poll_data_sdk_node` |
+| `extern/grippers` | [Robotiq/grippers](https://github.com/Robotiq/grippers) | the gripper C++ SDK |
+
+`extern/COLCON_IGNORE` keeps colcon from building either SDK's standalone
+CMake project as a workspace package; the packages that need them compile them
+in-tree.
+
+
 | Script | Description |
 |---|---|
 | `run.sh` | Builds a single ROS 2 Jazzy image with the **whole workspace** (sensor + grippers) and launches a shell with that product's devices mapped: `./run.sh [gripper\|sensor\|both]`. |
