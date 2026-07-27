@@ -10,32 +10,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "(GNU|Clang)")
     add_compile_options(-Wno-sign-conversion)
 endif()
 
-###############################################################################
-# test_robotiq_gripper_hardware_interface
-
-ament_add_gmock(test_robotiq_gripper_hardware_interface
-    test_robotiq_gripper_hardware_interface.cpp
-)
-target_include_directories(test_robotiq_gripper_hardware_interface
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-)
-target_link_libraries(
-    test_robotiq_gripper_hardware_interface
-    robotiq_driver
-    hardware_interface::hardware_interface
-)
-
-###############################################################################
-# robotiq_driver_tests
-
 # One gmock binary for the whole package, so the suite runs — and debugs — as a
 # single target. Pick a subset with --gtest_filter.
 ament_add_gmock(${PROJECT_NAME}_tests
-    test_gripper_scaling.cpp      # register <-> joint arithmetic
-    test_hardware_parameters.cpp  # HardwareInfo -> ConnectionConfig
-    test_rclcpp_logger.cpp        # SDK log sink -> /rosout
+    test_gripper_scaling.cpp                     # register <-> joint arithmetic
+    test_hardware_parameters.cpp                 # HardwareInfo -> ConnectionConfig
+    test_rclcpp_logger.cpp                       # SDK log sink -> /rosout
+    test_robotiq_gripper_hardware_interface.cpp  # plugin load, interfaces, use_dummy
 )
 target_include_directories(${PROJECT_NAME}_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 )
-target_link_libraries(${PROJECT_NAME}_tests robotiq_driver)
+target_link_libraries(
+    ${PROJECT_NAME}_tests
+    robotiq_driver
+    hardware_interface::hardware_interface
+)
