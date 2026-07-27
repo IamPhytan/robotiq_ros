@@ -154,7 +154,7 @@ protected:
     * @throw Robotiq::SerialIOException, Robotiq::DriverException as the
     *        Robotiq::Gripper constructor does.
     */
-   virtual std::unique_ptr<Robotiq::Gripper> create_gripper();
+   virtual std::unique_ptr<Robotiq::Gripper> createGripper();
 
    GripperParameters parameters_;
 
