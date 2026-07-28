@@ -8,7 +8,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -69,7 +68,6 @@ list(APPEND interface_targets_installed ${PROJECT_NAME}__rosidl_generator_py)
 include_directories(
   include
   include/robotiq_tsf
-  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_library(${PROJECT_NAME}_algorithms
@@ -84,7 +82,6 @@ target_include_directories(${PROJECT_NAME}_algorithms
 
 target_link_libraries(${PROJECT_NAME}_algorithms
   PUBLIC
-    ${OpenCV_LIBRARIES}
     Eigen3::Eigen
 )
 
@@ -124,7 +121,6 @@ target_include_directories(tactile_total_sum_node
 target_link_libraries(tactile_total_sum_node
   ${PROJECT_NAME}_algorithms
   ${cpp_typesupport_target}
-  ${OpenCV_LIBRARIES}
   Threads::Threads
 )
 
@@ -166,7 +162,6 @@ install(DIRECTORY resource/
 
 ament_export_dependencies(
   Eigen3
-  OpenCV
   ament_index_cpp
   rclcpp
   rosidl_default_runtime

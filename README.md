@@ -238,4 +238,23 @@ git submodule update --init
 
 > `Dockerfile_TSF85_ROS2` and `build_launch_docker_ros2.sh` are kept as deprecation shims pointing to `Dockerfile` / `run.sh sensor`.
 
-The single-image build (`Dockerfile`) is distro-flexible — `--build-arg ROS_DISTRO=…` (default `jazzy`).
+The `Dockerfile` is a multi-stage build: a `builder` stage compiles the workspace, and a slim `runtime` stage (the default) ships only the built workspace plus runtime deps — no compiler, no colcon/rosdep, no test deps.
+
+Build it directly (the context **must** be the repo root — the Dockerfile `COPY`s `robotiq_tsf/`, `grippers/` and `extern/tactile_sensors/sdk_cpp`):
+
+```bash
+docker build -f docker/Dockerfile -t robotiq_ros2:jazzy .
+```
+
+Build options:
+
+- `--build-arg ROS_DISTRO=…` (default `jazzy`) — parameterized, but `jazzy` is the only distro the workspace is built and tested against; CI covers `jazzy` alone.
+- `--build-arg WITH_GUI=false` — **headless**: drop rviz2/rqt/joint-state-publisher-gui (and their mesa/Qt/VTK), for a much smaller image on robots that don't visualize.
+- `--target builder` — a **dev** image with the full toolchain, for building inside the container.
+
+```bash
+docker build --build-arg WITH_GUI=false -f docker/Dockerfile -t robotiq_ros2:jazzy-headless .
+docker build --target builder -f docker/Dockerfile -t robotiq_ros2:dev .
+```
+
+Then run it with the sensor/gripper devices mapped via `./docker/run.sh [gripper|sensor|both]`.
