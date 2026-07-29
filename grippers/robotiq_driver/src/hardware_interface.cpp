@@ -220,6 +220,20 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
    return CallbackReturn::SUCCESS;
 }
 
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqGripperHardwareInterface::on_shutdown(
+   const rclcpp_lifecycle::State& previous_state)
+{
+   RCLCPP_DEBUG(kLogger, "on_shutdown");
+   return on_cleanup(previous_state);
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn RobotiqGripperHardwareInterface::on_error(
+   const rclcpp_lifecycle::State& previous_state)
+{
+   RCLCPP_DEBUG(kLogger, "on_error");
+   return on_cleanup(previous_state);
+}
+
 std::vector<hardware_interface::StateInterface> RobotiqGripperHardwareInterface::export_state_interfaces()
 {
    RCLCPP_DEBUG(kLogger, "export_state_interfaces");

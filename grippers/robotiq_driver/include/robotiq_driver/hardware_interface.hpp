@@ -56,6 +56,12 @@
 #include <rclcpp/rclcpp.hpp>
 
 namespace robotiq_driver {
+//! ros2_control hardware interface for a Robotiq 2F gripper, driven through the
+//! gripper SDK.
+//! Member order carries an invariant: recovery_ is declared after gripper_ so
+//! that destruction, which runs in reverse, joins the recovery before the
+//! gripper it borrows goes away. Reordering compiles and then misbehaves at
+//! shutdown.
 class RobotiqGripperHardwareInterface : public hardware_interface::SystemInterface
 {
 public:
@@ -93,6 +99,15 @@ public:
     */
    ROBOTIQ_DRIVER_PUBLIC
    CallbackReturn on_cleanup(const rclcpp_lifecycle::State& previous_state) override;
+
+   /**
+    * on_shutdown and on_error have the same behavior as on_cleanup
+    */
+   ROBOTIQ_DRIVER_PUBLIC
+   CallbackReturn on_shutdown(const rclcpp_lifecycle::State& previous_state) override;
+
+   ROBOTIQ_DRIVER_PUBLIC
+   CallbackReturn on_error(const rclcpp_lifecycle::State& previous_state) override;
 
    /**
     * This method exposes position and velocity of joints for reading.
