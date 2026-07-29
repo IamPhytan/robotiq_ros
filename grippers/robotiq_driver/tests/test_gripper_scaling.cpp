@@ -100,15 +100,18 @@ TEST(GripperScaling, AClosedPositionThatClosesNegativeStillMaps)
    EXPECT_EQ(kGripperMaxPos, registerFromJointPosition(-kClosedPosition, -kClosedPosition));
 }
 
-TEST(GripperScaling, AnUnusableMaximumCommandsNothing)
+TEST(GripperScaling, AFractionOutsideTheRangeCommandsNothing)
 {
    // As above: no fraction, so no register, rather than a guessed speed or
-   // force. A maximum that is not positive is a broken description, not a
-   // direction the way a negative closed position is.
+   // force. A negative speed and a maximum that is not positive are both broken
+   // descriptions, not directions the way a negative closed position is.
    EXPECT_FALSE(registerFromFractionOf(0.1, 0.0).has_value());
    EXPECT_FALSE(registerFromFractionOf(0.1, -0.15).has_value());
+   EXPECT_FALSE(registerFromFractionOf(-0.1, 0.15).has_value());
    EXPECT_FALSE(registerFromFractionOf(std::numeric_limits<double>::quiet_NaN(), 0.15).has_value());
    EXPECT_FALSE(registerFromFractionOf(0.1, std::numeric_limits<double>::quiet_NaN()).has_value());
+   EXPECT_FALSE(registerFromFractionOf(std::numeric_limits<double>::infinity(), 0.15).has_value());
+   EXPECT_FALSE(registerFromFractionOf(0.1, std::numeric_limits<double>::infinity()).has_value());
 }
 
 TEST(GripperScaling, FractionOfSpansTheWholeByte)
@@ -126,10 +129,8 @@ TEST(GripperScaling, FractionOfSaturatesRatherThanWrapping)
    EXPECT_EQ(255, registerFromFractionOf(10.0, 0.15));
 }
 
-TEST(GripperScaling, FractionOfIgnoresSign)
+TEST(GripperScaling, whenTheMaximumIsNearZero_theRegisterIsTheMaxAllowedValue)
 {
-   // The registers carry a magnitude; direction comes from the position
-   // request, so a negative speed is still a speed.
-   EXPECT_EQ(registerFromFractionOf(0.1, 0.15), registerFromFractionOf(-0.1, 0.15));
+   EXPECT_EQ(255, registerFromFractionOf(0.15, std::numeric_limits<double>::denorm_min()));
 }
 } // namespace robotiq_driver::test

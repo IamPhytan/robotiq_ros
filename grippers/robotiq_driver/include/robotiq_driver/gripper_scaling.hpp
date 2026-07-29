@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 namespace robotiq_driver {
@@ -77,18 +78,18 @@ inline constexpr uint8_t kGripperRange = kGripperMaxPos - kGripperMinPos;
    return static_cast<uint8_t>(std::clamp(counts, 0.0, 255.0));
 }
 
-//! An SI speed or force command -> its 0x00..0xFF register (rSP / rFR),
-//! as the fraction of \p maximum it represents. Sign is ignored: the
-//! registers set a magnitude, direction comes from the position request.
-//! Truncates, as above. Nothing when the fraction cannot be computed —
-//! either side non-finite, or a \p maximum that is not positive.
+//! An SI speed or force command -> its 0x00..0xFF register (rSP / rFR), as the
+//! fraction of \p maximum it represents. Truncates, as above. Nothing unless
+//! both sides are in range: \p value from zero up, \p maximum above it. The
+//! range excludes NaN and infinity, which no comparison admits.
 [[nodiscard]] inline std::optional<uint8_t> registerFromFractionOf(double value, double maximum)
 {
-   if(!std::isfinite(value) || !std::isfinite(maximum) || maximum <= 0.0)
+   constexpr double kLargest = std::numeric_limits<double>::max();
+   const bool in_range = value >= 0.0 && value <= kLargest && maximum > 0.0 && maximum <= kLargest;
+   if(!in_range)
    {
       return std::nullopt;
    }
-   const double fraction = std::clamp(std::fabs(value) / maximum, 0.0, 1.0);
-   return static_cast<uint8_t>(fraction * 0xFF);
+   return static_cast<uint8_t>(std::min(value / maximum, 1.0) * 0xFF);
 }
 } // namespace robotiq_driver
