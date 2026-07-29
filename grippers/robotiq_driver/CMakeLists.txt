@@ -30,10 +30,8 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
 # GRIPPER SDK
 
 # The Modbus transport, the typed register blocks and the Robotiq::Gripper
-# runtime API live in the extern/grippers submodule. Nothing links against it
-# yet — the hardware interface still runs the in-tree driver — but the build
-# wiring and the adapters below land first so the switch is a diff about
-# behaviour and nothing else.
+# runtime API live in the extern/grippers submodule; the hardware interface
+# below drives the gripper through it.
 #
 # EXCLUDE_FROM_ALL skips the SDK's own install/export rules: it is compiled
 # into robotiq_driver, not shipped as a second installed package.
@@ -45,12 +43,13 @@ if(NOT EXISTS "${GRIPPERS_SDK_DIR}/CMakeLists.txt")
 endif()
 # The SDK declares its library without STATIC or SHARED, so it follows
 # BUILD_SHARED_LIBS. Nothing installs it, so a shared one would leave the
-# plugin needing a library that does not ship. Pinned for this subtree only;
-# the enclosing project keeps its own setting.
+# plugin needing a library that does not ship.
+set(_robotiq_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
 set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(${GRIPPERS_SDK_DIR} ${CMAKE_CURRENT_BINARY_DIR}/grippers_sdk EXCLUDE_FROM_ALL)
-unset(BUILD_SHARED_LIBS)
+set(BUILD_SHARED_LIBS "${_robotiq_saved_build_shared_libs}")
 # A static archive going into a shared plugin has to be position-independent.
+# CMake cannot set properties through the Robotiq::grippers alias.
 set_target_properties(grippers_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 ###############################################################################
@@ -111,6 +110,11 @@ target_link_libraries(
   # SDK's headers ship with this package: a consumer may call any SDK entry
   # point, so every SDK object has to land in the library — not just the
   # ones the wrapper itself references.
+  #
+  # The consequence to know about: the whole SDK symbol set is exported from a
+  # dlopen'd plugin. A second package in the same process linking the SDK the
+  # same way gets its own copy with independent static state, and Robotiq::Gripper
+  # owns a serial link and a thread. One SDK consumer per process.
   $<BUILD_INTERFACE:$<LINK_LIBRARY:WHOLE_ARCHIVE,Robotiq::grippers>>
 )
 
@@ -157,6 +161,10 @@ install(
 
 # The SDK headers ship alongside ours: they are reachable from this package's
 # public headers, so a consumer including them needs these too.
+#
+# The pattern assumes the SDK is .hpp-only, which it is today. Anything else it
+# starts shipping — a C shim, a generated config header — would be dropped here
+# and fail at a downstream consumer's include, not in this build.
 install(
     DIRECTORY ${GRIPPERS_SDK_DIR}/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}          # include

@@ -97,7 +97,8 @@ rm -rf ros2_robotiq_gripper        # remove the PickNik clone to prevent duplica
 git clone --recurse-submodules https://github.com/robotiq/ros.git
 vcs import < ros/grippers/ros2_robotiq_gripper.rolling.repos   # same external `serial` dep as before
 cd ~/ws
-rosdep install --from-paths src --ignore-src -y
+sudo apt install libserialport-dev # the gripper SDK's serial backend; no rosdep key exists for it
+rosdep install --from-paths src --ignore-src -y --skip-keys libserialport
 rm -rf build install               # clear artifacts built from the PickNik sources
 colcon build
 ```
@@ -236,12 +237,11 @@ Two SDKs live under `extern/` as submodules and are built into the image:
 | Submodule | Repository | Used by |
 |---|---|---|
 | `extern/tactile_sensors` | [Robotiq/tactile_sensors](https://github.com/Robotiq/tactile_sensors) | `robotiq_tsf`'s `poll_data_sdk_node` |
-| `extern/grippers` | [Robotiq/grippers](https://github.com/Robotiq/grippers) | the gripper C++ SDK |
+| `extern/grippers` | [Robotiq/grippers](https://github.com/Robotiq/grippers) | `robotiq_driver` |
 
 `extern/COLCON_IGNORE` keeps colcon from building either SDK's standalone
 CMake project as a workspace package; the packages that need them compile them
 in-tree.
-
 
 | Script | Description |
 |---|---|
