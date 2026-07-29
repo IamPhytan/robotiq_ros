@@ -85,6 +85,23 @@ TEST(HardwareParameters, ReadsTheConnectionParameters)
    EXPECT_DOUBLE_EQ(50.0, parameters.connection.connectionFrequency);
 }
 
+TEST(HardwareParameters, AClosedPositionItCannotDivideByIsFatal)
+{
+   // on_init turns this into CallbackReturn::ERROR. PickNik accepted it and
+   // then produced an undefined register from the division.
+   EXPECT_THROW(parseParameters(info_with({{"gripper_closed_position", "0"}}), logger()), std::invalid_argument);
+   EXPECT_THROW(parseParameters(info_with({{"gripper_closed_position", "nan"}}), logger()), std::invalid_argument);
+   EXPECT_THROW(parseParameters(info_with({{"gripper_closed_position", "inf"}}), logger()), std::invalid_argument);
+}
+
+TEST(HardwareParameters, ANegativeClosedPositionIsSupported)
+{
+   // A joint whose closed direction is negative: the mapping inverts and works,
+   // as it did under PickNik.
+   EXPECT_DOUBLE_EQ(-0.7929,
+                    parseParameters(info_with({{"gripper_closed_position", "-0.7929"}}), logger()).closed_position);
+}
+
 TEST(HardwareParameters, SlaveAddressTakesTheManualsHexOrPlainDecimal)
 {
    // The manual prints the address in hex and a description may pass it through

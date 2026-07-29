@@ -126,7 +126,13 @@ GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, 
 
    // No default: the joint mapping is meaningless without the gripper's
    // closed angle, and guessing one would silently mis-scale every command.
+   // Zero and non-finite are the two it cannot divide by; negative is fine, and
+   // is how a joint that closes in the negative direction is described.
    parameters.closed_position = std::stod(info.hardware_parameters.at(kClosedPositionParam));
+   if(!std::isfinite(parameters.closed_position) || parameters.closed_position == 0.0)
+   {
+      throw std::invalid_argument("gripper_closed_position must be a non-zero, finite joint value");
+   }
 
    parameters.max_speed = parameterOr<double>(info, logger, kMaxSpeedParam, parameters.max_speed, asDouble);
    parameters.max_force = parameterOr<double>(info, logger, kMaxForceParam, parameters.max_force, asDouble);
