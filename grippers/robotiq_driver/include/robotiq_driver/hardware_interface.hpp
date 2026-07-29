@@ -166,6 +166,10 @@ protected:
    // this cycle keeps the value it had rather than a made-up one.
    Robotiq::GripperCommand command_ = Robotiq::GripperCommand::defaults();
 
+   // Per instance, so one gripper's throttled diagnostics cannot silence
+   // another's in a multi-gripper cell.
+   rclcpp::Clock diagnostic_clock_{RCL_STEADY_TIME};
+
    double reactivate_gripper_cmd_ = 0.0;
    double reactivate_gripper_response_ = 0.0;
    double gripper_force_ = 0.0;

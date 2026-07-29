@@ -81,14 +81,6 @@ bool has_finished(const std::future<Robotiq::ActivationResult>& recovery)
 {
    return recovery.valid() && recovery.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
-
-// The throttled diagnostics below are wall-clock paced and independent of any
-// node, so they use their own clock rather than a lifecycle node's.
-rclcpp::Clock& diagnostic_clock()
-{
-   static rclcpp::Clock clock{RCL_STEADY_TIME};
-   return clock;
-}
 } // namespace
 
 RobotiqGripperHardwareInterface::RobotiqGripperHardwareInterface() = default;
@@ -363,18 +355,20 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclc
       connection != Robotiq::ConnectionState::Operational)
    {
       RCLCPP_WARN_THROTTLE(kLogger,
-                           diagnostic_clock(),
+                           diagnostic_clock_,
                            kDiagnosticThrottleMs,
-                           "The Robotiq gripper link is %s; the reported position may be stale.",
+                           "The Robotiq gripper on %s: link is %s; the reported position may be stale.",
+                           parameters_.connection.serial.port.c_str(),
                            to_string(connection));
    }
 
    if(status.faultStatus.gripperFault() != Robotiq::GripperFault::None)
    {
       RCLCPP_WARN_THROTTLE(kLogger,
-                           diagnostic_clock(),
+                           diagnostic_clock_,
                            kDiagnosticThrottleMs,
-                           "The Robotiq gripper reports fault status 0x%02X.",
+                           "The Robotiq gripper on %s reports fault status 0x%02X.",
+                           parameters_.connection.serial.port.c_str(),
                            status.faultStatus.raw());
    }
 
@@ -445,7 +439,7 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::write(const rcl
    if(!position || !speed || !force)
    {
       RCLCPP_ERROR_THROTTLE(kLogger,
-                            diagnostic_clock(),
+                            diagnostic_clock_,
                             kDiagnosticThrottleMs,
                             "Cannot map position %f, speed %f, force %f onto gripper registers with "
                             "gripper_closed_position %f, gripper_max_speed %f, gripper_max_force %f; "
