@@ -143,11 +143,20 @@ TEST(HardwareParameters, UseDummyDefaultsOff)
    EXPECT_FALSE(parseParameters(info_with({{"use_dummy", "false"}}), logger()).use_dummy);
 }
 
-TEST(HardwareParameters, AnythingButFalseEnablesTheDummy)
+TEST(HardwareParameters, WhenUseDummyIsFalseLike_thenTheRealGripperIsUsed)
+{
+   for(const char* spelling : {"false", "False", "FALSE", "0", "no", "off", ""})
+   {
+      EXPECT_FALSE(parseParameters(info_with({{"use_dummy", spelling}}), logger()).use_dummy)
+         << "'" << spelling << "' should not select the fake gripper";
+   }
+}
+
+TEST(HardwareParameters, WhenUseDummyIsNotFalseLike_thenTheDummyIsUsed)
 {
    EXPECT_TRUE(parseParameters(info_with({{"use_dummy", "true"}}), logger()).use_dummy);
    EXPECT_TRUE(parseParameters(info_with({{"use_dummy", "True"}}), logger()).use_dummy);
-   EXPECT_TRUE(parseParameters(info_with({{"use_dummy", "0"}}), logger()).use_dummy);
-   EXPECT_TRUE(parseParameters(info_with({{"use_dummy", ""}}), logger()).use_dummy);
+   EXPECT_TRUE(parseParameters(info_with({{"use_dummy", "1"}}), logger()).use_dummy);
+   EXPECT_TRUE(parseParameters(info_with({{"use_dummy", "yes"}}), logger()).use_dummy);
 }
 } // namespace robotiq_driver::test

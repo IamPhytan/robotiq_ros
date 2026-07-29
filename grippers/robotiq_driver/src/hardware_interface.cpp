@@ -91,7 +91,7 @@ std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::create_grippe
 {
    if(parameters_.use_dummy)
    {
-      RCLCPP_INFO(kLogger, "You are connected to a dummy driver, not a real gripper.");
+      RCLCPP_WARN(kLogger, "You are connected to a dummy driver, not a real gripper.");
       return Robotiq::makeFakeGripper(parameters_.connection, logger_);
    }
    return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);

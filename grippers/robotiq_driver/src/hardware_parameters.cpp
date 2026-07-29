@@ -50,8 +50,16 @@ constexpr auto kForceMultiplierParam = "gripper_force_multiplier";
 constexpr auto kActivationTimeoutParam = "activation_timeout";
 constexpr auto kUseDummyParam = "use_dummy";
 
-// The dummy is off unless the parameter reads as anything other than this.
-constexpr auto kUseDummyDefault = "false";
+//! Whether \p text reads as "no". Anything else — including a bare "true" or
+//! any typo — selects the fake gripper, so the spellings people actually write
+//! have to be recognised here.
+bool isFalsey(std::string text)
+{
+   std::transform(text.begin(), text.end(), text.begin(), [](unsigned char letter) {
+      return static_cast<char>(std::tolower(letter));
+   });
+   return text.empty() || text == "0" || text == "false" || text == "no" || text == "off";
+}
 
 //! Look a parameter up and convert it with \p parse. An absent parameter
 //! keeps \p fallback silently; a present but unparsable one keeps it loudly.
@@ -128,9 +136,8 @@ GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, 
          return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(std::stod(text)));
       });
 
-   // Anything but the literal "false" enables the dummy, "0" included.
-   parameters.use_dummy = info.hardware_parameters.count(kUseDummyParam) != 0
-                       && info.hardware_parameters.at(kUseDummyParam) != kUseDummyDefault;
+   const auto use_dummy = info.hardware_parameters.find(kUseDummyParam);
+   parameters.use_dummy = use_dummy != info.hardware_parameters.end() && !isFalsey(use_dummy->second);
 
    return parameters;
 }
