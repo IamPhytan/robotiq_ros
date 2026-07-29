@@ -109,10 +109,17 @@ GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, 
       parameterOr<std::chrono::milliseconds>(info, logger, kTimeoutParam, kTimeoutDefault, [](const std::string& text) {
          return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(std::stod(text)));
       });
-   // Base 16: the address is written as the manual prints it ("0x9").
+   // Base 0: "0x9" as the manual prints it, and a bare "9" as the decimal it
+   // looks like. Rejecting a value that does not fit the byte keeps a typo from
+   // quietly addressing a different device.
    parameters.connection.modbusSlaveAddress =
       parameterOr<uint8_t>(info, logger, kSlaveAddressParam, kSlaveAddressDefault, [](const std::string& text) {
-         return static_cast<uint8_t>(std::stoul(text, nullptr, 16));
+         const auto address = std::stoul(text, nullptr, 0);
+         if(address > 0xFF)
+         {
+            throw std::out_of_range("slave_address does not fit in a byte");
+         }
+         return static_cast<uint8_t>(address);
       });
    parameters.connection.connectionFrequency =
       parameterOr<double>(info, logger, kConnectionFrequencyParam, kConnectionFrequencyDefault, asDouble);

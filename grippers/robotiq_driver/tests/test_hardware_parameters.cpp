@@ -85,13 +85,20 @@ TEST(HardwareParameters, ReadsTheConnectionParameters)
    EXPECT_DOUBLE_EQ(50.0, parameters.connection.connectionFrequency);
 }
 
-TEST(HardwareParameters, SlaveAddressIsReadAsHexadecimal)
+TEST(HardwareParameters, SlaveAddressTakesTheManualsHexOrPlainDecimal)
 {
-   // The manual prints the address in hex, and the description passes it
-   // through verbatim — reading it as decimal would silently target the
-   // wrong device.
+   // The manual prints the address in hex and a description may pass it through
+   // verbatim; a bare number is the decimal it looks like. PickNik read
+   // everything as hex, so "10" meant 16.
    EXPECT_EQ(0x12, parseParameters(info_with({{"slave_address", "0x12"}}), logger()).connection.modbusSlaveAddress);
-   EXPECT_EQ(0x09, parseParameters(info_with({{"slave_address", "9"}}), logger()).connection.modbusSlaveAddress);
+   EXPECT_EQ(9, parseParameters(info_with({{"slave_address", "9"}}), logger()).connection.modbusSlaveAddress);
+   EXPECT_EQ(10, parseParameters(info_with({{"slave_address", "10"}}), logger()).connection.modbusSlaveAddress);
+}
+
+TEST(HardwareParameters, ASlaveAddressBeyondAByteKeepsTheDefault)
+{
+   EXPECT_EQ(kSlaveAddressDefault,
+             parseParameters(info_with({{"slave_address", "0x1FF"}}), logger()).connection.modbusSlaveAddress);
 }
 
 TEST(HardwareParameters, TimeoutsAreSecondsInTheUrdfAndMillisecondsInTheConfig)
