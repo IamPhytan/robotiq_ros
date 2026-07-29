@@ -32,6 +32,7 @@
 #include <chrono>
 #include <cmath>
 #include <future>
+#include <limits>
 #include <string>
 #include <thread>
 
@@ -45,11 +46,11 @@
 #include <hardware_interface/version.h>
 #endif
 
+#include <robotiq_driver/rclcpp_logger.hpp>
+
 #include <rclcpp/node.hpp>
 
 #include <robotiq_driver/hardware_interface.hpp>
-
-#include <Robotiq/gripper/wait.hpp>
 
 namespace robotiq_driver::test {
 
@@ -206,12 +207,17 @@ class RecoveringGripper : public RobotiqGripperHardwareInterface
 public:
    RecoveringGripper()
    {
+      logger_ = std::make_shared<RclcppLogger>(rclcpp::get_logger("RecoveringGripperTest"));
       parameters_.use_dummy = true;
       parameters_.closed_position = 0.7929;
       parameters_.connection.connectionFrequency = 20.0;
    }
 
    void request_recovery() { reactivate_gripper_cmd_ = 1.0; }
+   void command_position(double position) { gripper_position_command_ = position; }
+   void command_speed(double speed) { gripper_speed_ = speed; }
+   uint8_t commanded_position_register() const { return gripper_->getCommand().positionRequest; }
+   uint8_t commanded_speed_register() const { return gripper_->getCommand().speed; }
    bool recovery_in_flight() const { return recovery_.valid(); }
    bool recovery_has_finished() const
    {
@@ -242,11 +248,115 @@ TEST(TestRobotiqGripperHardwareInterface, deactivation_waits_for_an_in_flight_re
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
    EXPECT_TRUE(gripper.recovery_has_finished()) << "on_deactivate returned while the recovery was still running";
-   // The gripper must end deactivated and stay there: unserialized, the
-   // recovery re-asserts rACT a few exchange cycles after the reset.
-   EXPECT_FALSE(Robotiq::waitFor([&] { return gripper.gripper_activated(); }, std::chrono::milliseconds{500}));
+   // on_deactivate does not return until the gripper reports the bit cleared,
+   // and the recovery that could re-assert it has been awaited above.
+   EXPECT_FALSE(gripper.gripper_activated());
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
+}
+
+/**
+ * write() is suppressed while a recovery is in flight: the handshake drives
+ * rACT itself, and a position command landing mid-reset aborts it.
+ */
+TEST(TestRobotiqGripperHardwareInterface, write_is_suppressed_during_a_recovery)
+{
+   RecoveringGripper gripper;
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+   gripper.command_position(0.0);
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   const uint8_t before = gripper.commanded_position_register();
+
+   gripper.request_recovery();
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   ASSERT_TRUE(gripper.recovery_in_flight());
+
+   gripper.command_position(0.7929);
+   EXPECT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   EXPECT_EQ(before, gripper.commanded_position_register()) << "write() reached the gripper during a recovery";
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
+}
+
+/**
+ * A controller can write a NaN to set_gripper_max_velocity. That register then
+ * has no value to compute, so it keeps the one it had while the position it
+ * could compute goes through.
+ */
+TEST(TestRobotiqGripperHardwareInterface, an_unmappable_speed_keeps_the_previous_one)
+{
+   RecoveringGripper gripper;
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+   gripper.command_position(0.0);
+   gripper.command_speed(0.05);
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   const uint8_t speed = gripper.commanded_speed_register();
+   const uint8_t position = gripper.commanded_position_register();
+   ASSERT_GT(speed, 0);
+
+   gripper.command_speed(std::numeric_limits<double>::quiet_NaN());
+   gripper.command_position(0.7929);
+   EXPECT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   EXPECT_EQ(speed, gripper.commanded_speed_register()) << "a NaN speed reached the gripper as a register";
+   EXPECT_NE(position, gripper.commanded_position_register()) << "the position command stopped following";
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
+}
+
+/**
+ * on_cleanup with a recovery still in flight has to await it: the recovery
+ * borrows the gripper it is about to destroy.
+ */
+TEST(TestRobotiqGripperHardwareInterface, cleanup_awaits_an_in_flight_recovery)
+{
+   RecoveringGripper gripper;
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+   gripper.request_recovery();
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   ASSERT_TRUE(gripper.recovery_in_flight());
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
+   EXPECT_FALSE(gripper.recovery_in_flight()) << "on_cleanup returned with the recovery still outstanding";
+}
+
+/**
+ * on_shutdown and on_error take the same path as on_cleanup, so an error
+ * transition does not leave the exchange thread running.
+ */
+TEST(TestRobotiqGripperHardwareInterface, shutdown_and_error_release_the_gripper)
+{
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   for(const bool via_error : {false, true})
+   {
+      RecoveringGripper gripper;
+      ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+      ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+      EXPECT_EQ(CallbackReturn::SUCCESS, via_error ? gripper.on_error(state) : gripper.on_shutdown(state));
+      // read() reports ERROR once the gripper is gone, which is how we know it
+      // was released rather than left running.
+      EXPECT_EQ(hardware_interface::return_type::ERROR,
+                gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   }
 }
 
 } // namespace robotiq_driver::test
