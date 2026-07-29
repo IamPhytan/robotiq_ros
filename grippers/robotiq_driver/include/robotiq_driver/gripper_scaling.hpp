@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
 namespace robotiq_driver {
 
@@ -59,23 +60,34 @@ inline constexpr uint8_t kGripperRange = kGripperMaxPos - kGripperMinPos;
 }
 
 //! Joint position -> register count (rPR), in the same unit as
-//! \p closed_position. Counts outside the byte are clamped; the caller is
-//! responsible for rejecting a NaN command.
+//! \p closed_position. Counts outside the byte are clamped. Nothing when the
+//! arithmetic cannot produce a count — a NaN command, or a
+//! \p closed_position of zero: there is no defensible register value, and
+//! commanding a made-up one moves a gripper that may be holding something.
 //!
 //! Truncates rather than rounds, so a position read off the gripper and
 //! commanded straight back can land one count below where it came from.
-[[nodiscard]] inline uint8_t registerFromJointPosition(double joint_position, double closed_position)
+[[nodiscard]] inline std::optional<uint8_t> registerFromJointPosition(double joint_position, double closed_position)
 {
    const double counts = (joint_position / closed_position) * kGripperRange + kGripperMinPos;
+   if(!std::isfinite(counts))
+   {
+      return std::nullopt;
+   }
    return static_cast<uint8_t>(std::clamp(counts, 0.0, 255.0));
 }
 
 //! An SI speed or force command -> its 0x00..0xFF register (rSP / rFR),
 //! as the fraction of \p maximum it represents. Sign is ignored: the
 //! registers set a magnitude, direction comes from the position request.
-//! Truncates, as above.
-[[nodiscard]] inline uint8_t registerFromFractionOf(double value, double maximum)
+//! Truncates, as above. Nothing when the fraction cannot be computed —
+//! either side non-finite, or a \p maximum that is not positive.
+[[nodiscard]] inline std::optional<uint8_t> registerFromFractionOf(double value, double maximum)
 {
+   if(!std::isfinite(value) || !std::isfinite(maximum) || maximum <= 0.0)
+   {
+      return std::nullopt;
+   }
    const double fraction = std::clamp(std::fabs(value) / maximum, 0.0, 1.0);
    return static_cast<uint8_t>(fraction * 0xFF);
 }

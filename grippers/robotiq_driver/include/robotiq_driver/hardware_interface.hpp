@@ -162,6 +162,10 @@ protected:
    double gripper_velocity_ = 0.0;
    double gripper_position_command_ = 0.0;
 
+   // The last command write() sent. A register the arithmetic cannot produce
+   // this cycle keeps the value it had rather than a made-up one.
+   Robotiq::GripperCommand command_ = Robotiq::GripperCommand::defaults();
+
    double reactivate_gripper_cmd_ = 0.0;
    double reactivate_gripper_response_ = 0.0;
    double gripper_force_ = 0.0;

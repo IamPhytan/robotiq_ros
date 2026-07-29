@@ -32,6 +32,7 @@
 #include <future>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <robotiq_driver/gripper_scaling.hpp>
@@ -437,12 +438,31 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::write(const rcl
       return hardware_interface::return_type::OK;
    }
 
-   Robotiq::GripperCommand command = Robotiq::GripperCommand::defaults();
-   command.action.set(Robotiq::ActionRequestBit::GoTo);
-   command.positionRequest = registerFromJointPosition(gripper_position_command_, parameters_.closed_position);
-   command.speed = registerFromFractionOf(gripper_speed_, parameters_.max_speed);
-   command.force = registerFromFractionOf(gripper_force_, parameters_.max_force);
-   gripper_->setCommand(command);
+   const std::optional<uint8_t> position =
+      registerFromJointPosition(gripper_position_command_, parameters_.closed_position);
+   const std::optional<uint8_t> speed = registerFromFractionOf(gripper_speed_, parameters_.max_speed);
+   const std::optional<uint8_t> force = registerFromFractionOf(gripper_force_, parameters_.max_force);
+   if(!position || !speed || !force)
+   {
+      RCLCPP_ERROR_THROTTLE(kLogger,
+                            diagnostic_clock(),
+                            kDiagnosticThrottleMs,
+                            "Cannot map position %f, speed %f, force %f onto gripper registers with "
+                            "gripper_closed_position %f, gripper_max_speed %f, gripper_max_force %f; "
+                            "keeping the previous command.",
+                            gripper_position_command_,
+                            gripper_speed_,
+                            gripper_force_,
+                            parameters_.closed_position,
+                            parameters_.max_speed,
+                            parameters_.max_force);
+   }
+
+   command_.action.set(Robotiq::ActionRequestBit::GoTo);
+   command_.positionRequest = position.value_or(command_.positionRequest);
+   command_.speed = speed.value_or(command_.speed);
+   command_.force = force.value_or(command_.force);
+   gripper_->setCommand(command_);
 
    return hardware_interface::return_type::OK;
 }

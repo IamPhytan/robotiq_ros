@@ -29,6 +29,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <optional>
+
 #include <robotiq_driver/gripper_scaling.hpp>
 
 namespace robotiq_driver::test {
@@ -58,9 +61,10 @@ TEST(GripperScaling, RegisterRoundTripLosesAtMostOneCount)
    // is a visible decision rather than a side effect of some later edit.
    for(uint8_t counts = kGripperMinPos; counts <= kGripperMaxPos; ++counts)
    {
-      const uint8_t round_tripped =
+      const std::optional<uint8_t> round_tripped =
          registerFromJointPosition(jointPositionFromRegister(counts, kClosedPosition), kClosedPosition);
-      EXPECT_THAT(round_tripped, testing::AnyOf(counts, counts - 1))
+      ASSERT_TRUE(round_tripped.has_value());
+      EXPECT_THAT(*round_tripped, testing::AnyOf(counts, counts - 1))
          << "round trip drifted more than a count at " << static_cast<int>(counts) << " counts";
    }
 }
@@ -76,6 +80,35 @@ TEST(GripperScaling, PositionsBelowTheTravelBandStayReachable)
    // The band starts at 3 counts, but 0..2 are still commandable: clamping is
    // to the byte, not to the band.
    EXPECT_LT(registerFromJointPosition(-0.005, kClosedPosition), kGripperMinPos);
+}
+
+TEST(GripperScaling, AnUnusableClosedPositionCommandsNothing)
+{
+   // 0/0 and x/0 have no register to land on. Answering "nothing" keeps the
+   // caller from moving the fingers on a made-up count.
+   EXPECT_FALSE(registerFromJointPosition(0.0, 0.0).has_value());
+   EXPECT_FALSE(registerFromJointPosition(0.5, 0.0).has_value());
+   EXPECT_FALSE(registerFromJointPosition(std::numeric_limits<double>::quiet_NaN(), kClosedPosition).has_value());
+   EXPECT_FALSE(registerFromJointPosition(0.5, std::numeric_limits<double>::quiet_NaN()).has_value());
+}
+
+TEST(GripperScaling, AClosedPositionThatClosesNegativeStillMaps)
+{
+   // A joint whose closed direction is negative is a supported description:
+   // the ratio inverts and the mapping still lands in the travel band.
+   EXPECT_EQ(kGripperMinPos, registerFromJointPosition(0.0, -kClosedPosition));
+   EXPECT_EQ(kGripperMaxPos, registerFromJointPosition(-kClosedPosition, -kClosedPosition));
+}
+
+TEST(GripperScaling, AnUnusableMaximumCommandsNothing)
+{
+   // As above: no fraction, so no register, rather than a guessed speed or
+   // force. A maximum that is not positive is a broken description, not a
+   // direction the way a negative closed position is.
+   EXPECT_FALSE(registerFromFractionOf(0.1, 0.0).has_value());
+   EXPECT_FALSE(registerFromFractionOf(0.1, -0.15).has_value());
+   EXPECT_FALSE(registerFromFractionOf(std::numeric_limits<double>::quiet_NaN(), 0.15).has_value());
+   EXPECT_FALSE(registerFromFractionOf(0.1, std::numeric_limits<double>::quiet_NaN()).has_value());
 }
 
 TEST(GripperScaling, FractionOfSpansTheWholeByte)
