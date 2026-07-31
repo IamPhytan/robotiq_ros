@@ -60,6 +60,7 @@ add_library(
   include/robotiq_driver/hardware_interface.hpp
   include/robotiq_driver/hardware_parameters.hpp
   include/robotiq_driver/rclcpp_logger.hpp
+  include/robotiq_driver/ros2_control_compat.hpp
   include/robotiq_driver/visibility_control.hpp
   # Signposts for the headers this package used to install, so downstream
   # code that includes one stops with an explanation instead of a

@@ -66,6 +66,8 @@ if(BUILD_TESTING)
   set(ament_cmake_xmllint_FOUND TRUE)
 
   ament_lint_auto_find_test_dependencies()
+
+  add_subdirectory(test)
 endif()
 
 # # EXPORTS

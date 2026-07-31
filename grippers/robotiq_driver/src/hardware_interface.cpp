@@ -97,8 +97,7 @@ std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::createGripper
    return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);
 }
 
-hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(
-   const hardware_interface::HardwareComponentInterfaceParams& params)
+hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(const OnInitParams& params)
 {
    RCLCPP_DEBUG(kLogger, "on_init");
 
