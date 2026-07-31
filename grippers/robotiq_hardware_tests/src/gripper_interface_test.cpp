@@ -1,4 +1,5 @@
-// Copyright (c) 2022 PickNik, Inc.
+// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -26,23 +27,86 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <chrono>
-#include <thread>
-#include <iostream>
-#include <memory>
+//! Manual bench exercise for a real gripper: connect, activate, then drive the
+//! fingers through a few open/close cycles at two speeds. Not a unit test —
+//! it needs hardware on a serial port, so nothing in CI runs it.
 
-#include <robotiq_driver/default_driver.hpp>
-#include <robotiq_driver/default_serial.hpp>
+#include <chrono>
+#include <cstdint>
+#include <iostream>
+#include <string>
+
+#include <Robotiq/gripper.hpp>
+#include <Robotiq/gripper/command.hpp>
+#include <Robotiq/gripper/connection_config.hpp>
+#include <Robotiq/gripper/status.hpp>
+#include <Robotiq/gripper/wait.hpp>
 
 #include "command_line_utility.hpp"
 
-constexpr auto kComPort = "/dev/ttyUSB0";
-constexpr auto kBaudRate = 115200;
-constexpr auto kTimeout = 1;
-constexpr auto kSlaveAddress = 0x09;
+namespace {
+constexpr const char* kComPort = "/dev/ttyUSB0";
+constexpr int kBaudRate = 115200;
+constexpr double kTimeout = 1.0;
+constexpr int kSlaveAddress = 0x09;
 
-using robotiq_driver::DefaultDriver;
-using robotiq_driver::DefaultSerial;
+// Generous: a full open-to-close sweep at the slowest speed still lands well
+// inside it, and overshooting only costs a failed run its error message.
+constexpr auto kMotionTimeout = std::chrono::seconds{10};
+
+const char* to_string(Robotiq::ActivationResult result)
+{
+   switch(result)
+   {
+   case Robotiq::ActivationResult::Activated:
+      return "activated";
+   case Robotiq::ActivationResult::AlreadyActive:
+      return "already active";
+   case Robotiq::ActivationResult::FaultLatched:
+      return "refused: a major fault is latched";
+   case Robotiq::ActivationResult::Timeout:
+      return "timed out";
+   }
+   return "unknown";
+}
+
+//! Command a position and block until the gripper stops moving — either it
+//! arrived, or it closed on something.
+bool move_to(Robotiq::Gripper& gripper, uint8_t position, uint8_t speed, uint8_t force)
+{
+   Robotiq::GripperCommand command = Robotiq::GripperCommand::defaults();
+   command.action.set(Robotiq::ActionRequestBit::GoTo);
+   command.positionRequest = position;
+   command.speed = speed;
+   command.force = force;
+   gripper.setCommand(command);
+
+   // The gripper needs a cycle or two to acknowledge the request before
+   // gOBJ leaves Moving; wait for the echo first so this does not read the
+   // previous move's "stopped" and return immediately.
+   const auto deadline = std::chrono::steady_clock::now() + kMotionTimeout;
+   if(!Robotiq::waitUntil([&] { return gripper.getStatus().positionRequestEcho == position; }, deadline))
+   {
+      std::cout << "  the gripper never echoed the position request" << std::endl;
+      return false;
+   }
+   if(!Robotiq::waitUntil(
+         [&] { return gripper.getStatus().gripperStatus.objectDetection() != Robotiq::ObjectDetection::Moving; },
+         deadline))
+   {
+      std::cout << "  the gripper is still moving after " << kMotionTimeout.count() << " s" << std::endl;
+      return false;
+   }
+
+   const Robotiq::GripperStatus status = gripper.getStatus();
+   std::cout << "  stopped at " << static_cast<int>(status.position) << " counts"
+             << (status.gripperStatus.objectDetection() == Robotiq::ObjectDetection::AtRequestedPosition
+                    ? ""
+                    : " (object detected)")
+             << std::endl;
+   return true;
+}
+} // namespace
 
 int main(int argc, char* argv[])
 {
@@ -60,15 +124,15 @@ int main(int argc, char* argv[])
    int slave_address = kSlaveAddress;
    cli.registerHandler(
       "--slave-address",
-      [&slave_address](const char* value) { slave_address = std::stoi(value); },
+      [&slave_address](const char* value) { slave_address = std::stoi(value, nullptr, 0); },
       false);
 
    cli.registerHandler("-h", [&]() {
-      std::cout << "Usage: ./set_relative_pressure [OPTIONS]\n"
+      std::cout << "Usage: ./full_test [OPTIONS]\n"
                 << "Options:\n"
                 << "  --port VALUE                      Set the com port (default " << kComPort << ")\n"
                 << "  --baudrate VALUE                  Set the baudrate (default " << kBaudRate << "bps)\n"
-                << "  --timeout VALUE                   Set the read/write timeout (default " << kTimeout << "ms)\n"
+                << "  --timeout VALUE                   Set the read/write timeout (default " << kTimeout << "s)\n"
                 << "  --slave-address VALUE             Set the slave address (default " << kSlaveAddress << ")\n"
                 << "  -h                                Show this help message\n";
       exit(0);
@@ -79,95 +143,67 @@ int main(int argc, char* argv[])
       return 1;
    }
 
+   Robotiq::ConnectionConfig config;
+   config.serial.port = port;
+   config.serial.baudrate = static_cast<uint32_t>(baudrate);
+   config.serial.timeout =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(timeout));
+   config.modbusSlaveAddress = static_cast<uint8_t>(slave_address);
+
+   std::cout << "Using the following parameters: " << std::endl;
+   std::cout << " - port: " << config.serial.port << std::endl;
+   std::cout << " - baudrate: " << config.serial.baudrate << "bps" << std::endl;
+   std::cout << " - read/write timeout: " << config.serial.timeout.count() << "ms" << std::endl;
+   std::cout << " - slave address: " << static_cast<int>(config.modbusSlaveAddress) << std::endl;
+
    try
    {
-      auto serial = std::make_unique<DefaultSerial>();
-      serial->set_port(port);
-      serial->set_baudrate(baudrate);
-      serial->set_timeout(
-         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(timeout)));
+      // Construction opens the link, reads the gripper and starts the
+      // exchange cycle; it throws if the gripper does not answer.
+      Robotiq::Gripper gripper{config};
+      std::cout << "The gripper is connected." << std::endl;
 
-      auto driver = std::make_unique<DefaultDriver>(std::move(serial));
-      driver->set_slave_address(slave_address);
-
-      std::cout << "Using the following parameters: " << std::endl;
-      std::cout << " - port: " << port << std::endl;
-      std::cout << " - baudrate: " << baudrate << "bps" << std::endl;
-      std::cout << " - read/write timeout: " << timeout << "s" << std::endl;
-      std::cout << " - slave address: " << slave_address << std::endl;
-
-      const bool connected = driver->connect();
-      if(!connected)
+      std::cout << "Activating the gripper..." << std::endl;
+      const Robotiq::ActivationResult activation = Robotiq::activate(gripper);
+      std::cout << "  " << to_string(activation) << std::endl;
+      if(activation != Robotiq::ActivationResult::Activated && activation != Robotiq::ActivationResult::AlreadyActive)
       {
-         std::cout << "The gripper is not connected" << std::endl;
+         // A latched fault is deliberately not cleared here: the recovery
+         // reset releases any grip and sweeps the fingers.
+         std::cout << "Cannot continue without an activated gripper." << std::endl;
          return 1;
       }
 
-      std::cout << "The gripper is connected." << std::endl;
-      std::cout << "Deactivating the gripper..." << std::endl;
-      ;
+      constexpr uint8_t kFullSpeed = 0xFF;
+      constexpr uint8_t kSlowSpeed = 0x0F;
+      constexpr uint8_t kFullForce = 0xFF;
 
-      driver->deactivate();
-
-      std::cout << "The gripper is deactivated." << std::endl;
-      std::cout << "Activating gripper..." << std::endl;
-      ;
-
-      driver->activate();
-
-      std::cout << "The gripper is activated." << std::endl;
-      std::cout << "Closing the gripper..." << std::endl;
-
-      driver->set_gripper_position(0xFF);
-      while(driver->gripper_is_moving())
+      const struct
       {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
+         const char* description;
+         uint8_t position;
+         uint8_t speed;
+      } steps[] = {
+         {"Closing the gripper...", 0xFF, kFullSpeed},
+         {"Opening the gripper...", 0x00, kFullSpeed},
+         {"Half closing the gripper...", 0x80, kFullSpeed},
+         {"Opening the gripper...", 0x00, kFullSpeed},
+         {"Closing the gripper slowly...", 0xFF, kSlowSpeed},
+         {"Opening the gripper...", 0x00, kFullSpeed},
+      };
 
-      std::cout << "Opening the gripper..." << std::endl;
-      driver->set_gripper_position(0x00);
-      while(driver->gripper_is_moving())
+      for(const auto& step : steps)
       {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-
-      std::cout << "Half closing the gripper..." << std::endl;
-      driver->set_gripper_position(0x80);
-      while(driver->gripper_is_moving())
-      {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-
-      std::cout << "Opening gripper..." << std::endl;
-      driver->set_gripper_position(0x00);
-      while(driver->gripper_is_moving())
-      {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-
-      std::cout << "Decreasing gripper speed..." << std::endl;
-      driver->set_speed(0x0F);
-
-      std::cout << "Closing gripper...\n";
-      driver->set_gripper_position(0xFF);
-      while(driver->gripper_is_moving())
-      {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-
-      std::cout << "Increasing gripper speed..." << std::endl;
-      driver->set_speed(0xFF);
-
-      std::cout << "Opening gripper..." << std::endl;
-      driver->set_gripper_position(0x00);
-      while(driver->gripper_is_moving())
-      {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+         std::cout << step.description << std::endl;
+         if(!move_to(gripper, step.position, step.speed, kFullForce))
+         {
+            return 1;
+         }
       }
    }
    catch(const std::exception& e)
    {
-      std::cout << "Failed to communicating with the gripper: " << e.what() << std::endl;
+      std::cout << "Failed to communicate with the gripper: " << e.what() << std::endl;
       return 1;
    }
 

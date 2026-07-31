@@ -14,7 +14,6 @@ find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(serial REQUIRED)
 find_package(robotiq_driver REQUIRED)
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
@@ -23,7 +22,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   pluginlib
   rclcpp
   rclcpp_lifecycle
-  serial
 )
 
 add_executable(full_test
@@ -31,6 +29,9 @@ add_executable(full_test
     src/command_line_utility.hpp
     src/command_line_utility.cpp
 )
+# The gripper SDK is compiled into librobotiq_driver.so and its headers are
+# installed alongside that package's own, so linking the driver is enough to
+# reach Robotiq::Gripper — there is no second package to find.
 target_link_libraries(full_test robotiq_driver::robotiq_driver)
 
 ament_package()

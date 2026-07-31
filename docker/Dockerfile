@@ -1,6 +1,7 @@
 # Multi-stage ROS 2 image for the whole robotiq ros workspace:
 #   - robotiq_tsf   (TSF-85 tactile sensor driver)
 #   - grippers/*    (Robotiq gripper driver, forked from PickNik)
+#   - extern/*      (the tactile-sensor and gripper SDK submodules)
 #
 # Stage 1 (builder): full toolchain, compiles the workspace.
 # Stage 2 (runtime, default): slim — only runtime deps + the built install/, no
@@ -41,6 +42,11 @@ COPY grippers    /ws/src/grippers
 # from building the SDK's own standalone CMakeLists as a separate package.
 COPY extern/tactile_sensors/sdk_cpp /ws/src/extern/tactile_sensors/sdk_cpp
 RUN touch /ws/src/extern/tactile_sensors/sdk_cpp/COLCON_IGNORE
+# Gripper SDK (robotiq/grippers), same arrangement: COPYing the submodule
+# checkout instead of cloning it means local, still-uncommitted SDK work
+# compiles here too.
+COPY extern/grippers/sdk_cpp /ws/src/extern/grippers/sdk_cpp
+RUN touch /ws/src/extern/grippers/sdk_cpp/COLCON_IGNORE
 
 # Gripper's external `serial` dep (tylerjw/serial), via the upstream .repos file.
 RUN cd /ws/src && vcs import < grippers/ros2_robotiq_gripper.rolling.repos
