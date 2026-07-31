@@ -97,17 +97,19 @@ target_include_directories(poll_data_sdk_lib
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     ${TSF_SDK_DIR}
 )
+# Imported targets rather than ament_target_dependencies(): the latter is gone
+# from ament_cmake in Lyrical. rclcpp::rclcpp, ament_index_cpp::ament_index_cpp
+# and the ${<pkg>_TARGETS} variables exist on every distro we support.
 target_link_libraries(poll_data_sdk_lib
-  ${PROJECT_NAME}_algorithms
-  ${cpp_typesupport_target}
-  robotiq_tactile_sdk
-  Threads::Threads
-)
-ament_target_dependencies(poll_data_sdk_lib
-  rclcpp
-  std_msgs
-  sensor_msgs
-  ament_index_cpp
+  PUBLIC
+    ${PROJECT_NAME}_algorithms
+    ${cpp_typesupport_target}
+    robotiq_tactile_sdk
+    Threads::Threads
+    rclcpp::rclcpp
+    ament_index_cpp::ament_index_cpp
+    ${std_msgs_TARGETS}
+    ${sensor_msgs_TARGETS}
 )
 
 add_executable(poll_data_sdk_node src/poll_data_sdk_main.cpp)
@@ -119,15 +121,13 @@ target_include_directories(tactile_total_sum_node
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(tactile_total_sum_node
-  ${PROJECT_NAME}_algorithms
-  ${cpp_typesupport_target}
-  Threads::Threads
-)
-
-ament_target_dependencies(tactile_total_sum_node
-  rclcpp
-  std_msgs
-  ament_index_cpp
+  PRIVATE
+    ${PROJECT_NAME}_algorithms
+    ${cpp_typesupport_target}
+    Threads::Threads
+    rclcpp::rclcpp
+    ament_index_cpp::ament_index_cpp
+    ${std_msgs_TARGETS}
 )
 
 install(TARGETS ${PROJECT_NAME}_algorithms
