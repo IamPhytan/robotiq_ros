@@ -39,7 +39,7 @@
 #include <robotiq_driver/hardware_interface.hpp>
 #include <robotiq_driver/rclcpp_logger.hpp>
 
-#include <Robotiq/fake/gripper_factory.hpp>
+#include <Robotiq/gripper/fake/gripper_factory.hpp>
 
 #include <hardware_interface/actuator_interface.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
