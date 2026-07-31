@@ -94,8 +94,8 @@ cd ros && ./docker/run.sh gripper
 ```bash
 cd ~/ws/src
 rm -rf ros2_robotiq_gripper        # remove the PickNik clone to prevent duplicate package name failures
+rm -rf serial                      # no longer used: the gripper SDK talks to the port itself
 git clone --recurse-submodules https://github.com/robotiq/ros.git
-vcs import < ros/grippers/ros2_robotiq_gripper.rolling.repos   # same external `serial` dep as before
 cd ~/ws
 sudo apt install libserialport-dev # the gripper SDK's serial backend; no rosdep key exists for it
 rosdep install --from-paths src --ignore-src -y --skip-keys libserialport
@@ -103,7 +103,11 @@ rm -rf build install               # clear artifacts built from the PickNik sour
 colcon build
 ```
 
-This repository also contains the TSF-85 sensor stack. To build only the gripper packages and their dependencies (including `serial`), replace the last step with:
+There is no `vcs import` step any more: the driver's transport comes from the
+`extern/grippers` submodule instead of the external `serial` package, so a
+`--recurse-submodules` clone is the whole dependency story.
+
+This repository also contains the TSF-85 sensor stack. To build only the gripper packages and their dependencies, replace the last step with:
 
 ```bash
 colcon build --packages-up-to robotiq_description robotiq_controllers robotiq_hardware_tests
@@ -116,7 +120,7 @@ The `main`/`rolling` line (which this repo continues) has breaking changes relat
 | | PickNik `humble` | This repository |
 |---|---|---|
 | ROS distro | Humble | Jazzy |
-| Dependencies file | `ros2_robotiq_gripper.humble.repos` | `grippers/ros2_robotiq_gripper.rolling.repos` |
+| Serial transport | `serial` package, `vcs import`ed | the `extern/grippers` SDK submodule (libserialport) |
 | `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `parallel_gripper_action_controller/GripperActionController` |
 | `gripper_cmd` action type | `control_msgs/action/GripperCommand` | `control_msgs/action/ParallelGripperCommand` |
 
@@ -147,7 +151,7 @@ ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
 
 | Package | Description |
 |---|---|
-| `robotiq_driver` | `ros2_control` hardware interface (Modbus RTU over serial) |
+| `robotiq_driver` | `ros2_control` hardware interface, over the `extern/grippers` SDK (Modbus RTU on serial) |
 | `robotiq_controllers` | Gripper command / activation controllers |
 | `robotiq_description` | URDF/xacro, meshes, RViz + bringup launch |
 | `robotiq_hardware_tests` | Hardware integration tests |
@@ -180,6 +184,35 @@ ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
 
 `position` is the joint angle in radians (≈ `0.0` open → ~`0.8` closed on a 2F-85); `effort` and `velocity` are optional max limits, mapped to the controller's `set_gripper_max_effort` / `set_gripper_max_velocity` interfaces.
 
+### Hardware parameters
+
+`robotiq_driver` reads these from the `<hardware>` block of the `ros2_control` description (`robotiq_description/urdf/2f_*.ros2_control.xacro`):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `gripper_closed_position` | *required* | Joint angle in radians at a fully closed gripper — the scale of the whole position mapping |
+| `COM_port` | `/dev/ttyUSB0` | Serial port |
+| `baudrate` | `115200` | Must match the gripper's persisted setting |
+| `timeout` | `0.5` | Per-transaction serial timeout, in seconds |
+| `slave_address` | `0x09` | Modbus slave address; `0x09` as the manual prints it, a bare number as the decimal it looks like |
+| `connection_frequency` | `100` | Rate of the SDK's background exchange cycle, in Hz; `0` free-runs |
+| `activation_timeout` | `15` | Seconds allowed for activation and for fault recovery |
+| `gripper_max_speed` / `gripper_max_force` | `0.150` m/s / `235` N | Full scale used to turn the speed/effort command interfaces into register fractions; must be positive |
+| `gripper_speed_multiplier` / `gripper_force_multiplier` | `1.0` | Initial fractions published on those interfaces |
+| `use_dummy` | `false` | Drive a fake gripper instead of hardware. Off for the usual falsey spellings — empty, `0`, `false`, `no`, `off`, in any case — on for anything else |
+
+A malformed value is reported and the default stands; only `gripper_closed_position` fails the transition — missing, malformed, zero, or non-finite. A speed or force command the driver cannot turn into a register leaves that register at its previous value.
+
+> `use_dummy` now selects the SDK's fake gripper: no port is opened, activation is instant, and the fingers report wherever they were last commanded. It keeps the real plugin loaded, so the gripper and activation controllers still bind. That is what distinguishes it from the `use_fake_hardware:=true` launch argument, which swaps the plugin out for `ros2_control`'s `mock_components/GenericSystem` — that exports neither `set_gripper_max_velocity` / `set_gripper_max_effort` nor the `reactivate_gripper` GPIO.
+
+### Activation, faults and recovery
+
+Activating the hardware component runs the gripper's reset handshake: it clears any latched fault and runs the calibration sweep. **It therefore releases any grip and moves the fingers through their full range** — activate with the workspace clear. Deactivating clears the command block including rACT, which resets the gripper and likewise releases any grip. This is what the driver has always done; the SDK exposes a conservative alternative (leave a healthy gripper alone, refuse to reset a faulted one) that is not wired up here yet.
+
+A fault can also be cleared without cycling the lifecycle state, by writing to the `reactivate_gripper/reactivate_gripper_cmd` command interface (exposed as a GPIO on the description, and driven by `robotiq_activation_controller`) — same handshake, same consequences. `reactivate_gripper_response` reads `1.0` once the recovery succeeds; a failure is logged but leaves the interface as it was, as it did before. A deactivation arriving while a recovery is in flight waits for it to finish before resetting.
+
+`activation_timeout` bounds both. The old driver had no timeout and could block the transition indefinitely.
+
 ### RViz
 
 Pass `launch_rviz:=true` to open RViz with the gripper model (default config `robotiq_description/rviz/view_urdf.rviz`); the joints update live from `joint_state_broadcaster`. Override with `rvizconfig:=/path/to/your.rviz`. Args combine — e.g. `use_fake_hardware:=true launch_rviz:=true` to visualize without hardware. Running via `docker/run.sh` already forwards X11, so the RViz window displays from inside the container (if it can't connect to the display, run `xhost +local:root` on the host once).
@@ -202,7 +235,6 @@ Unit tests live in each package's `test/` directory and run without hardware. Bu
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-vcs import < grippers/ros2_robotiq_gripper.rolling.repos  # one-time: pulls the external `serial` dep
 colcon build
 colcon test
 colcon test-result --verbose

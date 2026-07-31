@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,50 +26,16 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Removed header, kept as a signpost.
+//! This package no longer implements its own gripper driver: the transport,
+//! the register map and the runtime API all come from the Robotiq gripper SDK
+//! (extern/grippers). The header you included went with that change.
+//!
+//! These byte/hex helpers were driver internals and have no public replacement.
+//!
+//! This shim exists so the build stops here with an explanation rather than
+//! with a missing-file error. It will be deleted in a future release.
+
 #pragma once
 
-#include <array>
-#include <cstdint>
-#include <string>
-#include <vector>
-
-/**
- * Utility class to convert between commonly used data types.
- */
-namespace robotiq_driver::data_utils {
-/**
- * Convert a sequence of uint8_t into a sequence of hex numbers.
- * @param bytes The sequence of bytes.
- * @return A string containing the sequence of hex numbers.
- */
-std::string to_hex(const std::vector<uint8_t>& bytes);
-
-/**
- * Convert a sequence of uint16_t into a sequence of hex numbers.
- * @param bytes The sequence of bytes.
- * @return A string containing the sequence of hex numbers.
- */
-std::string to_hex(const std::vector<uint16_t>& bytes);
-
-/**
- * Convert a byte to a binary representation for testing purposes.
- * @param byte The byte to decode.
- * @return The binary representation of the given byte.
- */
-std::string to_binary_string(const uint8_t byte);
-
-/**
- * Get the Most Significant Byte (MSB) of the given value.
- * @param value A 16-bits value.
- * @return The Most Significant Byte (MSB) of the given value.
- */
-uint8_t get_msb(uint16_t value);
-
-/**
- * Get the Least Significant Byte (LSB) of the given value.
- * @param value A 16-bits value.
- * @return The Least Significant Byte (LSB) of the given value.
- */
-uint8_t get_lsb(uint16_t value);
-
-} // namespace robotiq_driver::data_utils
+#error "robotiq_driver/data_utils.hpp was removed: it had no public role."

@@ -58,8 +58,5 @@ jobs:
             robotiq_description
             robotiq_hardware_tests
           target-ros2-distro: ${{ matrix.ros_distro }}
-          # robotiq_driver's `serial` dep has no rosdep rule — import it from
-          # source via the upstream .repos file. libserialport (the SDK's serial
-          # backend) is installed above, so skip its rosdep key.
-          vcs-repo-file-url: "${{ github.workspace }}/grippers/ros2_robotiq_gripper.rolling.repos"
+          # libserialport is installed above; skip its rosdep key.
           rosdep-skip-keys: libserialport

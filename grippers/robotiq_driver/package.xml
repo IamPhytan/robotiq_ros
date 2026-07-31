@@ -17,7 +17,6 @@
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
-  <depend>serial</depend>
 
   <!-- Serial backend of the gripper SDK compiled in from extern/grippers.
        No rosdep rule exists for the bare key; installed explicitly in

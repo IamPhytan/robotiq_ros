@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,16 +26,17 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Removed header, kept as a signpost.
+//! This package no longer implements its own gripper driver: the transport,
+//! the register map and the runtime API all come from the Robotiq gripper SDK
+//! (extern/grippers). The header you included went with that change.
+//!
+//! Modbus framing, CRC included, is internal to the SDK's client. There is no public replacement, deliberately: nothing
+//! above the transport should be computing CRCs.
+//!
+//! This shim exists so the build stops here with an explanation rather than
+//! with a missing-file error. It will be deleted in a future release.
+
 #pragma once
 
-#include <cstdint>
-#include <vector>
-
-namespace robotiq_driver::crc_utils {
-/**
- * @brief Compute the CRC for the CRC-16 MODBUS protocol.
- * @param data The data to compute the CRC for.
- * @return A 16-bits CRC.
- */
-uint16_t compute_crc(const std::vector<uint8_t>& data);
-} // namespace robotiq_driver::crc_utils
+#error "robotiq_driver/crc_utils.hpp was removed: Modbus framing is internal to the SDK."

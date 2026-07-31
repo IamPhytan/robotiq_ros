@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,44 +26,17 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Removed header, kept as a signpost.
+//! This package no longer implements its own gripper driver: the transport,
+//! the register map and the runtime API all come from the Robotiq gripper SDK
+//! (extern/grippers). The header you included went with that change.
+//!
+//! The dummy backend is now Robotiq::makeFakeGripper() in <Robotiq/gripper/fake/gripper_factory.hpp>. The `use_dummy`
+//! hardware parameter still selects it, so descriptions using it keep working unchanged.
+//!
+//! This shim exists so the build stops here with an explanation rather than
+//! with a missing-file error. It will be deleted in a future release.
+
 #pragma once
 
-#include <robotiq_driver/driver.hpp>
-
-namespace robotiq_driver {
-/**
- * This is a fake driver that can be used for testing interactions with the
- * hardware interface or the controller without being connected to the real
- * hardware. At the moment the fake driver is very basic but it can be
- * improved to behave as close as possible to the real hardware.
- * To use this driver you have to enable the following parameter in your
- * hardware interface configuration in the robot URDF.
- *
- * <!-- Set use_dummy to true to connect to a dummy driver. -->
- * <param name="use_dummy">true</param>
- */
-class FakeDriver : public Driver
-{
-public:
-   void set_slave_address(uint8_t slave_address) override;
-   bool connect() override;
-   void disconnect() override;
-   void activate() override;
-   void deactivate() override;
-   void set_gripper_position(uint8_t position) override;
-   uint8_t get_gripper_position() override;
-   bool gripper_is_moving() override;
-   void set_speed(uint8_t speed) override;
-   void set_force(uint8_t force) override;
-
-private:
-   uint8_t slave_address_ = 0x00;
-   bool connected_ = false;
-   bool activated_ = false;
-   uint8_t position_ = 0;
-   bool gripper_is_moving_ = false;
-   uint8_t speed_ = 0;
-   uint8_t force_ = 0;
-};
-
-} // namespace robotiq_driver
+#error "fake_driver.hpp was removed: use makeFakeGripper() from <Robotiq/gripper/fake/gripper_factory.hpp>."

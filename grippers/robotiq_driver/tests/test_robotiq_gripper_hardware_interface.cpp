@@ -361,6 +361,8 @@ TEST(TestRobotiqGripperHardwareInterface, shutdown_and_error_release_the_gripper
 
 } // namespace robotiq_driver::test
 
+// main() for the whole package suite: the test files link into one binary, and
+// rclcpp has to be up before any node is constructed.
 int main(int argc, char** argv)
 {
    rclcpp::init(argc, argv);

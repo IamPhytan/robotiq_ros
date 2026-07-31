@@ -30,7 +30,6 @@
 #include <robotiq_driver/hardware_parameters.hpp>
 
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 
 #include <rclcpp/logging.hpp>

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 PickNik, Inc.
+// Copyright (c) 2026 Robotiq, Inc.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -10,7 +10,7 @@
 //      notice, this list of conditions and the following disclaimer in the
 //      documentation and/or other materials provided with the distribution.
 //
-//    * Neither the name of the {copyright_holder} nor the names of its
+//    * Neither the name of the copyright holder nor the names of its
 //      contributors may be used to endorse or promote products derived from
 //      this software without specific prior written permission.
 //
@@ -26,49 +26,17 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+//! \brief Removed header, kept as a signpost.
+//! This package no longer implements its own gripper driver: the transport,
+//! the register map and the runtime API all come from the Robotiq gripper SDK
+//! (extern/grippers). The header you included went with that change.
+//!
+//! The SDK's implementation is Robotiq::detail::DefaultSerial, built for you from the Robotiq::ConnectionConfig you
+//! hand to Robotiq::Gripper.
+//!
+//! This shim exists so the build stops here with an explanation rather than
+//! with a missing-file error. It will be deleted in a future release.
+
 #pragma once
 
-#include <serial/serial.h>
-
-#include <memory>
-#include <string>
-#include <vector>
-
-#include <robotiq_driver/serial.hpp>
-
-namespace serial {
-class Serial;
-}
-
-namespace robotiq_driver {
-class DefaultSerial : public Serial
-{
-public:
-   /**
-    * Creates a Serial object to send and receive bytes to and from the serial
-    * port.
-    */
-   DefaultSerial();
-
-   void open() override;
-
-   [[nodiscard]] bool is_open() const override;
-
-   void close() override;
-
-   [[nodiscard]] std::vector<uint8_t> read(size_t size = 1) override;
-   void write(const std::vector<uint8_t>& data) override;
-
-   void set_port(const std::string& port) override;
-   [[nodiscard]] std::string get_port() const override;
-
-   void set_timeout(std::chrono::milliseconds timeout_ms) override;
-   [[nodiscard]] std::chrono::milliseconds get_timeout() const override;
-
-   void set_baudrate(uint32_t baudrate) override;
-   [[nodiscard]] uint32_t get_baudrate() const override;
-
-private:
-   std::unique_ptr<serial::Serial> serial_ = nullptr;
-};
-} // namespace robotiq_driver
+#error "robotiq_driver/default_serial.hpp was removed: configure the link with Robotiq::ConnectionConfig."
