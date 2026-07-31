@@ -1,6 +1,11 @@
 # ament linters for the C++ packages: the vendored gripper tree (grippers/) and
 # robotiq_tsf. Adapted from PickNik's ros2_robotiq_gripper CI: distribution ->
 # jazzy, runner -> ubuntu-24.04 (Noble).
+#
+# Deliberately not matrixed over humble/jazzy/lyrical like ci-ros-build-test:
+# these linters check style, not API, so a second and third distro would only
+# re-run the same checks against different linter versions. Jazzy is the
+# reference; .pre-commit-config.yaml (ci-format) is the formatting authority.
 name: ROS Lint
 
 on:

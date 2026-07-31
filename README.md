@@ -4,8 +4,33 @@ ROS packages for Robotiq grippers and sensors.
 
 | Package | Description | ROS Version |
 |---|---|---|
-| [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Jazzy ([main](https://github.com/robotiq/ros/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ros/tree/noetic)) |
-| [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — vendored from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 Jazzy |
+| [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Humble / Jazzy / Lyrical ([main](https://github.com/robotiq/ros/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ros/tree/noetic)) |
+| [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — vendored from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 Humble / Jazzy / Lyrical |
+
+## Supported ROS 2 distros
+
+`main` supports the three live LTS distros from one branch — build it on whichever
+one your robot already runs.
+
+| Distro | Ubuntu | Gripper action | `gripper_cmd` action type |
+|---|---|---|---|
+| Humble | 22.04 Jammy | `position_controllers/GripperActionController` | `control_msgs/action/GripperCommand` |
+| Jazzy | 24.04 Noble | `parallel_gripper_action_controller/GripperActionController` | `control_msgs/action/ParallelGripperCommand` |
+| Lyrical | 26.04 Resolute | `parallel_gripper_action_controller/GripperActionController` | `control_msgs/action/ParallelGripperCommand` |
+
+Rolling builds and passes the full suite as well, and CI watches it, but it is not
+a supported target: it is a moving development branch, so a break there is a
+heads-up rather than a release blocker. Its job does not gate merges. Kilted and
+other non-LTS releases are not built.
+
+The action type differs because `parallel_gripper_controller` does not exist on
+Humble — ROS itself only gained it in Jazzy. `robotiq_control.launch.py` picks the
+matching controller config automatically from `$ROS_DISTRO`, and everything else
+(package names, launch files, controller names, topics, the
+`/robotiq_gripper_controller/gripper_cmd` namespace, the xacro macro arguments)
+is identical across all three. On Humble that makes this repo a drop-in
+replacement for PickNik's `humble` branch — see
+[Migrating from PickNik's ros2_robotiq_gripper](#migrating-from-picknik-ros2_robotiq_gripper).
 
 ## Legacy
 
@@ -89,7 +114,7 @@ git clone --recurse-submodules https://github.com/robotiq/ros.git
 cd ros && ./docker/run.sh gripper
 ```
 
-**Existing ROS 2 Jazzy workspace:**
+**Existing ROS 2 workspace** (Humble, Jazzy or Lyrical — same steps on all three):
 
 ```bash
 cd ~/ws/src
@@ -105,7 +130,8 @@ colcon build
 
 There is no `vcs import` step any more: the driver's transport comes from the
 `extern/grippers` submodule instead of the external `serial` package, so a
-`--recurse-submodules` clone is the whole dependency story.
+`--recurse-submodules` clone is the whole dependency story. `rosdep` resolves
+the right gripper action controller for your distro on its own.
 
 This repository also contains the TSF-85 sensor stack. To build only the gripper packages and their dependencies, replace the last step with:
 
@@ -115,26 +141,38 @@ colcon build --packages-up-to robotiq_description robotiq_controllers robotiq_ha
 
 #### Coming from the `humble` branch
 
-The `main`/`rolling` line (which this repo continues) has breaking changes relative to PickNik's `humble` branch — all made upstream by PickNik, before the import into this repository:
+**Staying on Humble: nothing to change.** This repository builds on Humble and
+keeps PickNik's Humble controller and action surface, so your existing action
+clients, launch overrides and xacro arguments work untouched:
 
-| | PickNik `humble` | This repository |
+| | PickNik `humble` | This repository on Humble |
 |---|---|---|
-| ROS distro | Humble | Jazzy |
+| ROS distro | Humble | Humble |
 | Serial transport | `serial` package, `vcs import`ed | the `extern/grippers` SDK submodule (libserialport) |
-| `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `parallel_gripper_action_controller/GripperActionController` |
-| `gripper_cmd` action type | `control_msgs/action/GripperCommand` | `control_msgs/action/ParallelGripperCommand` |
+| `robotiq_gripper_controller` type | `position_controllers/GripperActionController` | `position_controllers/GripperActionController` |
+| `gripper_cmd` action type | `control_msgs/action/GripperCommand` | `control_msgs/action/GripperCommand` |
 
-The controller switch tracks ROS itself: `gripper_controllers` is removed in Kilted+, and `parallel_gripper_controller` is its replacement available from Jazzy on (upstream [PickNik PR #103](https://github.com/PickNikRobotics/ros2_robotiq_gripper/pull/103)).
+As on PickNik's `humble`, the Humble controller cannot claim the hardware's
+`set_gripper_max_effort` / `set_gripper_max_velocity` interfaces — Humble's
+`gripper_controllers` has no parameters for them (PickNik's
+`use_effort_interface` / `use_speed_interface` entries were silently ignored
+there). Per-goal speed and force therefore come from the xacro's
+`gripper_speed_multiplier` / `gripper_force_multiplier`, exactly as before.
 
-Action clients must switch to the `ParallelGripperCommand` goal — a `sensor_msgs/JointState` naming the knuckle joint:
+**Moving to Jazzy or Lyrical at the same time** is the one breaking step, and the
+break is upstream ROS's, not this repository's — `gripper_controllers` is gone in
+Kilted+, and `parallel_gripper_controller` is its replacement from Jazzy on
+(upstream [PickNik PR #103](https://github.com/PickNikRobotics/ros2_robotiq_gripper/pull/103)).
+Action clients then switch to the `ParallelGripperCommand` goal — a
+`sensor_msgs/JointState` naming the knuckle joint:
 
 ```bash
-# PickNik humble (old)
+# Humble (PickNik humble, and this repo on Humble)
 ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
   control_msgs/action/GripperCommand \
   "{command: {position: 0.4, max_effort: 50.0}}"
 
-# This repository (new)
+# Jazzy / Lyrical
 ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
   control_msgs/action/ParallelGripperCommand \
   "{command: {name: ['robotiq_85_left_knuckle_joint'], position: [0.4], effort: [40.0]}}"
@@ -168,21 +206,26 @@ This activates `joint_state_broadcaster`, `robotiq_gripper_controller`, and `rob
 
 ### Commanding the gripper
 
-`robotiq_gripper_controller` is a `parallel_gripper_action_controller/GripperActionController`, so its action `/robotiq_gripper_controller/gripper_cmd` takes a `control_msgs/action/ParallelGripperCommand` — a `sensor_msgs/JointState` goal (not the older `GripperCommand`).
+On **Jazzy and Lyrical**, `robotiq_gripper_controller` is a `parallel_gripper_action_controller/GripperActionController`, so its action `/robotiq_gripper_controller/gripper_cmd` takes a `control_msgs/action/ParallelGripperCommand` — a `sensor_msgs/JointState` goal (not the older `GripperCommand`). On **Humble** it is `position_controllers/GripperActionController` taking `control_msgs/action/GripperCommand`; see [Supported ROS 2 distros](#supported-ros-2-distros).
 
 The bringup above holds its terminal, so open a **second terminal**, exec into the running container, then send a goal:
 
 ```bash
-# host: open a second shell into the running container
-docker exec -it robotiq_ros2 bash
+# host: open a second shell into the running container (per-distro container name)
+docker exec -it robotiq_ros2_jazzy bash
 
-# inside the container:
+# inside the container — Jazzy / Lyrical:
 ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
   control_msgs/action/ParallelGripperCommand \
   "{command: {name: ['robotiq_85_left_knuckle_joint'], position: [0.4], effort: [40.0]}}"
+
+# inside the container — Humble:
+ros2 action send_goal /robotiq_gripper_controller/gripper_cmd \
+  control_msgs/action/GripperCommand \
+  "{command: {position: 0.4, max_effort: 50.0}}"
 ```
 
-`position` is the joint angle in radians (≈ `0.0` open → ~`0.8` closed on a 2F-85); `effort` and `velocity` are optional max limits, mapped to the controller's `set_gripper_max_effort` / `set_gripper_max_velocity` interfaces.
+`position` is the joint angle in radians (≈ `0.0` open → ~`0.8` closed on a 2F-85); on Jazzy/Lyrical `effort` and `velocity` are optional max limits, mapped to the controller's `set_gripper_max_effort` / `set_gripper_max_velocity` interfaces.
 
 ### Hardware parameters
 
@@ -227,14 +270,16 @@ ros2 launch robotiq_description view_gripper.launch.py
 
 Drag the `robotiq_85_left_knuckle_joint` slider; the five finger joints follow it via URDF `mimic` (≈ `0.0` open → ~`0.8` closed).
 
-> Known limitation: the `gripper_cmd` action controller does not drive the model under `use_fake_hardware:=true` (the mock does not expose the gripper's effort/velocity command interfaces), so goal-based commanding in simulation is not yet available. Use the slider above for hardware-free visualization.
+Goal-based commanding also works without hardware: `robotiq_control.launch.py use_fake_hardware:=true launch_rviz:=true` brings up all three controllers against `mock_components/GenericSystem`, and `gripper_cmd` goals drive the model — the five finger joints follow the knuckle via URDF `mimic`, exactly as on hardware. Use the slider above when you want to pose the model by hand instead.
+
+Mock and hardware publish the same `/joint_states` contract on every distro: the knuckle joint alone, with `robot_state_publisher` deriving the mimicked finger joints from the URDF. Only the Gazebo and Isaac paths declare the mimicked joints to `ros2_control`, since those simulators supply their own joint state.
 
 ## Testing
 
 Unit tests live in each package's `test/` directory and run without hardware. Build and run all tests from the repository root:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/jazzy/setup.bash    # or humble / lyrical
 colcon build
 colcon test
 colcon test-result --verbose
@@ -248,7 +293,7 @@ Test executables land under `build/<package>/`, mirroring the package's test-dir
 ./build/<package>/test/<test_executable> --gtest_filter='<TestSuite>.*'
 ```
 
-CI builds the packages and runs their unit tests on pull requests ([`ci-ros-build-test.yml`](.github/workflows/ci-ros-build-test.yml)).
+CI builds the packages and runs their unit tests on pull requests, once per supported distro — Humble, Jazzy and Lyrical ([`ci-ros-build-test.yml`](.github/workflows/ci-ros-build-test.yml)).
 
 ## Docker
 
@@ -277,7 +322,7 @@ in-tree.
 
 | Script | Description |
 |---|---|
-| `run.sh` | Builds a single ROS 2 Jazzy image with the **whole workspace** (sensor + grippers) and launches a shell with that product's devices mapped: `./run.sh [gripper\|sensor\|both]`. |
+| `run.sh` | Builds a single ROS 2 image with the **whole workspace** (sensor + grippers) and launches a shell with that product's devices mapped: `./run.sh [gripper\|sensor\|both]`. |
 | `sensor_install.sh` | Sets up udev rules and permissions for bare-metal (non-Docker) use |
 
 > `Dockerfile_TSF85_ROS2` and `build_launch_docker_ros2.sh` are kept as deprecation shims pointing to `Dockerfile` / `run.sh sensor`.
@@ -292,7 +337,7 @@ docker build -f docker/Dockerfile -t robotiq_ros2:jazzy .
 
 Build options:
 
-- `--build-arg ROS_DISTRO=…` (default `jazzy`) — parameterized, but `jazzy` is the only distro the workspace is built and tested against; CI covers `jazzy` alone.
+- `--build-arg ROS_DISTRO=…` (default `jazzy`) — `humble`, `jazzy` and `lyrical` are all built in CI.
 - `--build-arg WITH_GUI=false` — **headless**: drop rviz2/rqt/joint-state-publisher-gui (and their mesa/Qt/VTK), for a much smaller image on robots that don't visualize.
 - `--target builder` — a **dev** image with the full toolchain, for building inside the container.
 
@@ -302,3 +347,12 @@ docker build --target builder -f docker/Dockerfile -t robotiq_ros2:dev .
 ```
 
 Then run it with the sensor/gripper devices mapped via `./docker/run.sh [gripper|sensor|both]`.
+
+Pick the distro with `ROS_DISTRO` (default `jazzy`); each one gets its own image
+tag and container name, so switching does not reuse the other's build:
+
+```bash
+./docker/run.sh gripper                      # robotiq_ros2:jazzy   / robotiq_ros2_jazzy
+ROS_DISTRO=humble  ./docker/run.sh gripper   # robotiq_ros2:humble  / robotiq_ros2_humble
+ROS_DISTRO=lyrical ./docker/run.sh both      # robotiq_ros2:lyrical / robotiq_ros2_lyrical
+```

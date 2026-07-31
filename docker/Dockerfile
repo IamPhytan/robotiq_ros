@@ -8,7 +8,7 @@
 #   compiler / colcon / test deps. GUI (rviz2, rqt, …) is optional.
 #
 # Build options, examples and the build-context requirement: see the Docker
-# section in README.md.
+# section in README.md. ROS_DISTRO is a build arg: humble, jazzy and lyrical.
 
 ARG ROS_DISTRO=jazzy
 
@@ -19,7 +19,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
 # Build tooling + sensor build deps (libserialport, via pkg-config) + gripper
-# build deps (ros2_control stack).
+# build deps (ros2_control stack). ros2-controllers brings the distro's gripper
+# action controller: gripper_controllers on Humble, parallel_gripper_controller
+# on Jazzy and newer.
 RUN apt-get update && apt-get install -y \
         pkg-config \
         python3-colcon-common-extensions python3-rosdep \
