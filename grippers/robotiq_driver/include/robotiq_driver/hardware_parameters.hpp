@@ -50,7 +50,7 @@ namespace robotiq_driver {
 //! today, but are pinned here on purpose: a description that omits one of
 //! these parameters has to keep getting this value even if the SDK changes
 //! its own.
-inline constexpr auto kComPortDefault = "/dev/ttyUSB0";
+inline constexpr const char* kComPortDefault = "/dev/ttyUSB0";
 inline constexpr uint32_t kBaudrateDefault = 115200;
 inline constexpr auto kTimeoutDefault = std::chrono::milliseconds{500};
 inline constexpr uint8_t kSlaveAddressDefault = 0x09;

@@ -37,18 +37,18 @@
 
 namespace robotiq_driver {
 namespace {
-constexpr auto kComPortParam = "COM_port";
-constexpr auto kBaudrateParam = "baudrate";
-constexpr auto kTimeoutParam = "timeout";
-constexpr auto kSlaveAddressParam = "slave_address";
-constexpr auto kConnectionFrequencyParam = "connection_frequency";
-constexpr auto kClosedPositionParam = "gripper_closed_position";
-constexpr auto kMaxSpeedParam = "gripper_max_speed";
-constexpr auto kMaxForceParam = "gripper_max_force";
-constexpr auto kSpeedMultiplierParam = "gripper_speed_multiplier";
-constexpr auto kForceMultiplierParam = "gripper_force_multiplier";
-constexpr auto kActivationTimeoutParam = "activation_timeout";
-constexpr auto kUseDummyParam = "use_dummy";
+constexpr const char* kComPortParam = "COM_port";
+constexpr const char* kBaudrateParam = "baudrate";
+constexpr const char* kTimeoutParam = "timeout";
+constexpr const char* kSlaveAddressParam = "slave_address";
+constexpr const char* kConnectionFrequencyParam = "connection_frequency";
+constexpr const char* kClosedPositionParam = "gripper_closed_position";
+constexpr const char* kMaxSpeedParam = "gripper_max_speed";
+constexpr const char* kMaxForceParam = "gripper_max_force";
+constexpr const char* kSpeedMultiplierParam = "gripper_speed_multiplier";
+constexpr const char* kForceMultiplierParam = "gripper_force_multiplier";
+constexpr const char* kActivationTimeoutParam = "activation_timeout";
+constexpr const char* kUseDummyParam = "use_dummy";
 
 //! Whether \p text reads as "no". Anything else — including a bare "true" or
 //! any typo — selects the fake gripper, so the spellings people actually write

@@ -55,7 +55,7 @@
 namespace robotiq_driver::test {
 
 namespace {
-constexpr auto kComponentName = "robotiq_driver_ros2_control";
+constexpr const char* kComponentName = "robotiq_driver_ros2_control";
 
 //! \p extra_hardware_params is spliced into the <hardware> block, so a test
 //! can select a backend without restating the whole description.
