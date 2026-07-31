@@ -14,7 +14,11 @@ find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(robotiq_driver REQUIRED)
+# Already present when this package is configured as part of a larger project
+# (the dev/ IDE aggregate); found through its install prefix otherwise.
+if(NOT TARGET robotiq_driver::robotiq_driver)
+  find_package(robotiq_driver REQUIRED)
+endif()
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   ament_cmake

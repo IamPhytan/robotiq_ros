@@ -58,7 +58,7 @@ constexpr auto kDeactivationTimeout = std::chrono::seconds{2};
 
 namespace robotiq_driver {
 namespace {
-const char* to_string(Robotiq::ConnectionState state)
+const char* toString(Robotiq::ConnectionState state)
 {
    switch(state)
    {
@@ -77,7 +77,7 @@ const char* to_string(Robotiq::ConnectionState state)
 // A recovery future stays valid from launch until read() consumes its result,
 // so `valid()` alone answers "is a recovery outstanding"; this answers the
 // narrower "has it finished".
-bool has_finished(const std::future<Robotiq::ActivationResult>& recovery)
+bool hasFinished(const std::future<Robotiq::ActivationResult>& recovery)
 {
    return recovery.valid() && recovery.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
@@ -87,7 +87,7 @@ RobotiqGripperHardwareInterface::RobotiqGripperHardwareInterface() = default;
 
 RobotiqGripperHardwareInterface::~RobotiqGripperHardwareInterface() = default;
 
-std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::create_gripper()
+std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::createGripper()
 {
    if(parameters_.use_dummy)
    {
@@ -187,7 +187,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
 
    try
    {
-      gripper_ = create_gripper();
+      gripper_ = createGripper();
    }
    catch(const std::exception& e)
    {
@@ -373,7 +373,7 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclc
                            kDiagnosticThrottleMs,
                            "The Robotiq gripper on %s: link is %s; the reported position may be stale.",
                            parameters_.connection.serial.port.c_str(),
-                           to_string(connection));
+                           toString(connection));
    }
 
    if(status.faultStatus.gripperFault() != Robotiq::GripperFault::None)
@@ -404,7 +404,7 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclc
       }
    }
 
-   if(has_finished(recovery_))
+   if(hasFinished(recovery_))
    {
       const Robotiq::ActivationResult result = recovery_.get();
       recovery_ = {};

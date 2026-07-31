@@ -54,7 +54,7 @@ constexpr int kSlaveAddress = 0x09;
 // inside it, and overshooting only costs a failed run its error message.
 constexpr auto kMotionTimeout = std::chrono::seconds{10};
 
-const char* to_string(Robotiq::ActivationResult result)
+const char* toString(Robotiq::ActivationResult result)
 {
    switch(result)
    {
@@ -72,7 +72,7 @@ const char* to_string(Robotiq::ActivationResult result)
 
 //! Command a position and block until the gripper stops moving — either it
 //! arrived, or it closed on something.
-bool move_to(Robotiq::Gripper& gripper, uint8_t position, uint8_t speed, uint8_t force)
+bool moveTo(Robotiq::Gripper& gripper, uint8_t position, uint8_t speed, uint8_t force)
 {
    Robotiq::GripperCommand command = Robotiq::GripperCommand::defaults();
    command.action.set(Robotiq::ActionRequestBit::GoTo);
@@ -165,7 +165,7 @@ int main(int argc, char* argv[])
 
       std::cout << "Activating the gripper..." << std::endl;
       const Robotiq::ActivationResult activation = Robotiq::activate(gripper);
-      std::cout << "  " << to_string(activation) << std::endl;
+      std::cout << "  " << toString(activation) << std::endl;
       if(activation != Robotiq::ActivationResult::Activated && activation != Robotiq::ActivationResult::AlreadyActive)
       {
          // A latched fault is deliberately not cleared here: the recovery
@@ -195,7 +195,7 @@ int main(int argc, char* argv[])
       for(const auto& step : steps)
       {
          std::cout << step.description << std::endl;
-         if(!move_to(gripper, step.position, step.speed, kFullForce))
+         if(!moveTo(gripper, step.position, step.speed, kFullForce))
          {
             return 1;
          }

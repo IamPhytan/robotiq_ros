@@ -31,6 +31,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <future>
 #include <limits>
 #include <string>
@@ -59,7 +60,7 @@ constexpr const char* kComponentName = "robotiq_driver_ros2_control";
 
 //! \p extra_hardware_params is spliced into the <hardware> block, so a test
 //! can select a backend without restating the whole description.
-std::string minimal_robot_urdf(const std::string& extra_hardware_params = "")
+std::string minimalRobotUrdf(const std::string& extra_hardware_params = "")
 {
    return std::string(R"(
         <?xml version="1.0" encoding="utf-8"?>
@@ -104,9 +105,9 @@ std::string minimal_robot_urdf(const std::string& extra_hardware_params = "")
  * This test generates a minimal xacro robot configuration and loads the
  * hardware interface plugin.
  */
-TEST(TestRobotiqGripperHardwareInterface, load_urdf)
+TEST(TestRobotiqGripperHardwareInterface, LoadsThePluginFromUrdf)
 {
-   const std::string urdf = minimal_robot_urdf();
+   const std::string urdf = minimalRobotUrdf();
 
    rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
 
@@ -127,9 +128,9 @@ TEST(TestRobotiqGripperHardwareInterface, load_urdf)
  * hardware stops exporting them under these exact names the gripper controller
  * fails to activate at runtime.
  */
-TEST(TestRobotiqGripperHardwareInterface, exports_expected_command_interfaces)
+TEST(TestRobotiqGripperHardwareInterface, ExportsExpectedCommandInterfaces)
 {
-   const std::string urdf = minimal_robot_urdf();
+   const std::string urdf = minimalRobotUrdf();
 
    rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
 
@@ -155,9 +156,9 @@ TEST(TestRobotiqGripperHardwareInterface, exports_expected_command_interfaces)
  * gripper and activation controllers, which bind to interfaces the
  * ros2_control mock does not export.
  */
-TEST(TestRobotiqGripperHardwareInterface, use_dummy_activates_and_follows_commands)
+TEST(TestRobotiqGripperHardwareInterface, UseDummyActivatesAndFollowsCommands)
 {
-   const std::string urdf = minimal_robot_urdf(R"(<param name="use_dummy">true</param>)");
+   const std::string urdf = minimalRobotUrdf(R"(<param name="use_dummy">true</param>)");
 
    rclcpp::Node node{"test_robotiq_gripper_hardware_interface"};
 
@@ -213,17 +214,17 @@ public:
       parameters_.connection.connectionFrequency = 20.0;
    }
 
-   void request_recovery() { reactivate_gripper_cmd_ = 1.0; }
-   void command_position(double position) { gripper_position_command_ = position; }
-   void command_speed(double speed) { gripper_speed_ = speed; }
-   uint8_t commanded_position_register() const { return gripper_->getCommand().positionRequest; }
-   uint8_t commanded_speed_register() const { return gripper_->getCommand().speed; }
-   bool recovery_in_flight() const { return recovery_.valid(); }
-   bool recovery_has_finished() const
+   void requestRecovery() { reactivate_gripper_cmd_ = 1.0; }
+   void commandPosition(double position) { gripper_position_command_ = position; }
+   void commandSpeed(double speed) { gripper_speed_ = speed; }
+   uint8_t commandedPositionRegister() const { return gripper_->getCommand().positionRequest; }
+   uint8_t commandedSpeedRegister() const { return gripper_->getCommand().speed; }
+   bool recoveryInFlight() const { return recovery_.valid(); }
+   bool recoveryHasFinished() const
    {
       return recovery_.valid() && recovery_.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
    }
-   bool gripper_activated() const { return gripper_->getStatus().gripperStatus.activated(); }
+   bool gripperActivated() const { return gripper_->getStatus().gripperStatus.activated(); }
 };
 } // namespace
 
@@ -233,7 +234,7 @@ public:
  * rACT, and racing them lets the recovery re-assert rACT after the reset,
  * leaving the gripper activated after on_deactivate reported success.
  */
-TEST(TestRobotiqGripperHardwareInterface, deactivation_waits_for_an_in_flight_recovery)
+TEST(TestRobotiqGripperHardwareInterface, DeactivationWaitsForAnInFlightRecovery)
 {
    RecoveringGripper gripper;
    const rclcpp_lifecycle::State state;
@@ -242,15 +243,15 @@ TEST(TestRobotiqGripperHardwareInterface, deactivation_waits_for_an_in_flight_re
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
 
-   gripper.request_recovery();
+   gripper.requestRecovery();
    ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   ASSERT_TRUE(gripper.recovery_in_flight());
+   ASSERT_TRUE(gripper.recoveryInFlight());
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
-   EXPECT_TRUE(gripper.recovery_has_finished()) << "on_deactivate returned while the recovery was still running";
+   EXPECT_TRUE(gripper.recoveryHasFinished()) << "on_deactivate returned while the recovery was still running";
    // on_deactivate does not return until the gripper reports the bit cleared,
    // and the recovery that could re-assert it has been awaited above.
-   EXPECT_FALSE(gripper.gripper_activated());
+   EXPECT_FALSE(gripper.gripperActivated());
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
 }
@@ -259,7 +260,7 @@ TEST(TestRobotiqGripperHardwareInterface, deactivation_waits_for_an_in_flight_re
  * write() is suppressed while a recovery is in flight: the handshake drives
  * rACT itself, and a position command landing mid-reset aborts it.
  */
-TEST(TestRobotiqGripperHardwareInterface, write_is_suppressed_during_a_recovery)
+TEST(TestRobotiqGripperHardwareInterface, WriteIsSuppressedDuringARecovery)
 {
    RecoveringGripper gripper;
    const rclcpp_lifecycle::State state;
@@ -268,17 +269,17 @@ TEST(TestRobotiqGripperHardwareInterface, write_is_suppressed_during_a_recovery)
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
 
-   gripper.command_position(0.0);
+   gripper.commandPosition(0.0);
    ASSERT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   const uint8_t before = gripper.commanded_position_register();
+   const uint8_t before = gripper.commandedPositionRegister();
 
-   gripper.request_recovery();
+   gripper.requestRecovery();
    ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   ASSERT_TRUE(gripper.recovery_in_flight());
+   ASSERT_TRUE(gripper.recoveryInFlight());
 
-   gripper.command_position(0.7929);
+   gripper.commandPosition(0.7929);
    EXPECT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   EXPECT_EQ(before, gripper.commanded_position_register()) << "write() reached the gripper during a recovery";
+   EXPECT_EQ(before, gripper.commandedPositionRegister()) << "write() reached the gripper during a recovery";
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
@@ -289,7 +290,7 @@ TEST(TestRobotiqGripperHardwareInterface, write_is_suppressed_during_a_recovery)
  * has no value to compute, so it keeps the one it had while the position it
  * could compute goes through.
  */
-TEST(TestRobotiqGripperHardwareInterface, an_unmappable_speed_keeps_the_previous_one)
+TEST(TestRobotiqGripperHardwareInterface, AnUnmappableSpeedKeepsThePreviousOne)
 {
    RecoveringGripper gripper;
    const rclcpp_lifecycle::State state;
@@ -298,18 +299,18 @@ TEST(TestRobotiqGripperHardwareInterface, an_unmappable_speed_keeps_the_previous
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
 
-   gripper.command_position(0.0);
-   gripper.command_speed(0.05);
+   gripper.commandPosition(0.0);
+   gripper.commandSpeed(0.05);
    ASSERT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   const uint8_t speed = gripper.commanded_speed_register();
-   const uint8_t position = gripper.commanded_position_register();
+   const uint8_t speed = gripper.commandedSpeedRegister();
+   const uint8_t position = gripper.commandedPositionRegister();
    ASSERT_GT(speed, 0);
 
-   gripper.command_speed(std::numeric_limits<double>::quiet_NaN());
-   gripper.command_position(0.7929);
+   gripper.commandSpeed(std::numeric_limits<double>::quiet_NaN());
+   gripper.commandPosition(0.7929);
    EXPECT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   EXPECT_EQ(speed, gripper.commanded_speed_register()) << "a NaN speed reached the gripper as a register";
-   EXPECT_NE(position, gripper.commanded_position_register()) << "the position command stopped following";
+   EXPECT_EQ(speed, gripper.commandedSpeedRegister()) << "a NaN speed reached the gripper as a register";
+   EXPECT_NE(position, gripper.commandedPositionRegister()) << "the position command stopped following";
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
@@ -319,7 +320,7 @@ TEST(TestRobotiqGripperHardwareInterface, an_unmappable_speed_keeps_the_previous
  * on_cleanup with a recovery still in flight has to await it: the recovery
  * borrows the gripper it is about to destroy.
  */
-TEST(TestRobotiqGripperHardwareInterface, cleanup_awaits_an_in_flight_recovery)
+TEST(TestRobotiqGripperHardwareInterface, CleanupAwaitsAnInFlightRecovery)
 {
    RecoveringGripper gripper;
    const rclcpp_lifecycle::State state;
@@ -328,19 +329,19 @@ TEST(TestRobotiqGripperHardwareInterface, cleanup_awaits_an_in_flight_recovery)
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
    ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
 
-   gripper.request_recovery();
+   gripper.requestRecovery();
    ASSERT_EQ(hardware_interface::return_type::OK, gripper.read(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
-   ASSERT_TRUE(gripper.recovery_in_flight());
+   ASSERT_TRUE(gripper.recoveryInFlight());
 
    EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
-   EXPECT_FALSE(gripper.recovery_in_flight()) << "on_cleanup returned with the recovery still outstanding";
+   EXPECT_FALSE(gripper.recoveryInFlight()) << "on_cleanup returned with the recovery still outstanding";
 }
 
 /**
  * on_shutdown and on_error take the same path as on_cleanup, so an error
  * transition does not leave the exchange thread running.
  */
-TEST(TestRobotiqGripperHardwareInterface, shutdown_and_error_release_the_gripper)
+TEST(TestRobotiqGripperHardwareInterface, ShutdownAndErrorReleaseTheGripper)
 {
    const rclcpp_lifecycle::State state;
    using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
@@ -359,12 +360,25 @@ TEST(TestRobotiqGripperHardwareInterface, shutdown_and_error_release_the_gripper
    }
 }
 
+namespace {
+// pluginlib finds the hardware interface through the ament index in the install
+// tree, so the tests that load it by name need this build's install prefix on
+// AMENT_PREFIX_PATH. Nothing else provides it — not ctest, not an IDE, not a
+// shell — and prepending a prefix that is already there costs nothing.
+void announceTheInstalledPlugin()
+{
+   const char* const search_path = std::getenv("AMENT_PREFIX_PATH");
+   const std::string prefix = ROBOTIQ_DRIVER_INSTALL_PREFIX;
+   setenv("AMENT_PREFIX_PATH", (search_path ? prefix + ":" + search_path : prefix).c_str(), 1);
+}
+} // namespace
 } // namespace robotiq_driver::test
 
 // main() for the whole package suite: the test files link into one binary, and
 // rclcpp has to be up before any node is constructed.
 int main(int argc, char** argv)
 {
+   robotiq_driver::test::announceTheInstalledPlugin();
    rclcpp::init(argc, argv);
    testing::InitGoogleTest(&argc, argv);
    return RUN_ALL_TESTS();
