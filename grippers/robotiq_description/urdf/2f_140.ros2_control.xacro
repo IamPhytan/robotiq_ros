@@ -48,13 +48,18 @@
             <!-- With Gazebo or Hardware, they handle mimic joints, so we only need this command interface activated -->
             <joint name="${prefix}finger_joint">
                 <command_interface name="position" />
+                <!-- Mock-only; see the same block in 2f_85.ros2_control.xacro. -->
+                <xacro:if value="${use_fake_hardware}">
+                    <command_interface name="set_gripper_max_velocity"/>
+                    <command_interface name="set_gripper_max_effort"/>
+                </xacro:if>
                 <state_interface name="position">
                     <param name="initial_value">${gripper_closed_position}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <!-- When simulating we need to include the rest of the gripper joints -->
-            <xacro:if value="${use_fake_hardware or sim_isaac or sim_gazebo}">
+            <xacro:if value="${sim_isaac or sim_gazebo}">
                 <joint name="${prefix}left_inner_knuckle_joint">
                     <xacro:unless value="${sim_gazebo}">
                         <state_interface name="position"/>
