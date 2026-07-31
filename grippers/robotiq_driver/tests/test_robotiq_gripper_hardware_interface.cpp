@@ -31,6 +31,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <future>
 #include <limits>
 #include <string>
@@ -359,12 +360,25 @@ TEST(TestRobotiqGripperHardwareInterface, shutdown_and_error_release_the_gripper
    }
 }
 
+namespace {
+// pluginlib finds the hardware interface through the ament index in the install
+// tree, so the tests that load it by name need this build's install prefix on
+// AMENT_PREFIX_PATH. Nothing else provides it — not ctest, not an IDE, not a
+// shell — and prepending a prefix that is already there costs nothing.
+void announceTheInstalledPlugin()
+{
+   const char* const search_path = std::getenv("AMENT_PREFIX_PATH");
+   const std::string prefix = ROBOTIQ_DRIVER_INSTALL_PREFIX;
+   setenv("AMENT_PREFIX_PATH", (search_path ? prefix + ":" + search_path : prefix).c_str(), 1);
+}
+} // namespace
 } // namespace robotiq_driver::test
 
 // main() for the whole package suite: the test files link into one binary, and
 // rclcpp has to be up before any node is constructed.
 int main(int argc, char** argv)
 {
+   robotiq_driver::test::announceTheInstalledPlugin();
    rclcpp::init(argc, argv);
    testing::InitGoogleTest(&argc, argv);
    return RUN_ALL_TESTS();

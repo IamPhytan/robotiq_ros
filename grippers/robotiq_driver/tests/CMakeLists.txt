@@ -21,6 +21,10 @@ ament_add_gmock(${PROJECT_NAME}_tests
 target_include_directories(${PROJECT_NAME}_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 )
+# Where this build installs the plugin, for the tests that load it by name.
+target_compile_definitions(${PROJECT_NAME}_tests
+    PRIVATE ROBOTIQ_DRIVER_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+)
 target_link_libraries(
     ${PROJECT_NAME}_tests
     robotiq_driver
