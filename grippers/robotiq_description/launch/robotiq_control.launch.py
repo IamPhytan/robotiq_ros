@@ -37,6 +37,16 @@ from launch.conditions import IfCondition
 import launch_ros
 import os
 
+# Humble has no parallel_gripper_controller package, so it needs its own
+# controller config. See both config/robotiq_controllers*.yaml.
+JAZZY_CONTROLLERS_FILE = "robotiq_controllers.yaml"
+HUMBLE_CONTROLLERS_FILE = "robotiq_controllers.humble.yaml"
+
+
+def controllers_file_for_distro(distro):
+    """Return the controller config file name to load on ROS distro `distro`."""
+    return HUMBLE_CONTROLLERS_FILE if distro == "humble" else JAZZY_CONTROLLERS_FILE
+
 
 def generate_launch_description():
     description_pkg_share = launch_ros.substitutions.FindPackageShare(
@@ -104,7 +114,7 @@ def generate_launch_description():
         )
     }
 
-    controllers_file = "robotiq_controllers.yaml"
+    controllers_file = controllers_file_for_distro(os.environ.get("ROS_DISTRO"))
     initial_joint_controllers = PathJoinSubstitution(
         [description_pkg_share, "config", controllers_file]
     )
@@ -133,27 +143,29 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("launch_rviz")),
     )
 
-    joint_state_broadcaster_spawner = launch_ros.actions.Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "joint_state_broadcaster",
-            "--controller-manager",
-            "/controller_manager",
-        ],
-    )
+    # Each spawner is handed the controller config explicitly with --param-file.
+    # Passing it to ros2_control_node alone is not enough: up to Jazzy the
+    # controller_manager forwarded its own parameter file to each controller node,
+    # but from Lyrical (ros2_control 6.x) it does not, and the gripper controller
+    # then dies with "parameter 'joint' is not initialized". --param-file has been
+    # a spawner option since Humble, and each node reads only its own section of
+    # the file, so this is correct on every supported distro.
+    def spawner(controller_name):
+        return launch_ros.actions.Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=[
+                controller_name,
+                "--controller-manager",
+                "/controller_manager",
+                "--param-file",
+                initial_joint_controllers,
+            ],
+        )
 
-    robotiq_gripper_controller_spawner = launch_ros.actions.Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["robotiq_gripper_controller", "-c", "/controller_manager"],
-    )
-
-    robotiq_activation_controller_spawner = launch_ros.actions.Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["robotiq_activation_controller", "-c", "/controller_manager"],
-    )
+    joint_state_broadcaster_spawner = spawner("joint_state_broadcaster")
+    robotiq_gripper_controller_spawner = spawner("robotiq_gripper_controller")
+    robotiq_activation_controller_spawner = spawner("robotiq_activation_controller")
 
     nodes = [
         control_node,

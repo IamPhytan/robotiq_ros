@@ -1,3 +1,6 @@
+# Jazzy / Lyrical controller configuration. Humble uses
+# config/robotiq_controllers.humble.yaml instead (no parallel_gripper_controller
+# package there); launch/robotiq_control.launch.py selects per $ROS_DISTRO.
 controller_manager:
   ros__parameters:
     update_rate: 500  # Hz
