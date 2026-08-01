@@ -181,6 +181,15 @@ TEST(TestRobotiqGripperHardwareInterface, UseDummyActivatesAndFollowsCommands)
    auto position = rm.claim_state_interface("robotiq_85_left_knuckle_joint/position");
    auto command = rm.claim_command_interface("robotiq_85_left_knuckle_joint/position");
 
+   // Activation seeds both sides from where the fingers actually are, so a
+   // controller that adopts the position state as its hold target on activation
+   // holds the gripper still instead of dragging it somewhere else.
+   ASSERT_TRUE(compat::readWriteOk(rm.read(time, period)));
+   const auto seeded_position = compat::getValue(position);
+   ASSERT_TRUE(seeded_position.has_value());
+   EXPECT_DOUBLE_EQ(compat::getValue(command).value_or(-1.0), seeded_position.value())
+      << "the position command must start at the measured position, not at a fixed default";
+
    // Half closed, in joint radians against the 0.7929 closed position.
    constexpr double kTarget = 0.4;
    ASSERT_TRUE(compat::setValue(command, kTarget));
