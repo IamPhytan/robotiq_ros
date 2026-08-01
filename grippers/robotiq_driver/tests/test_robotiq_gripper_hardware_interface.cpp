@@ -53,6 +53,8 @@
 
 #include <robotiq_driver/hardware_interface.hpp>
 
+#include "ros2_control_compat.hpp"
+
 namespace robotiq_driver::test {
 
 namespace {
@@ -181,9 +183,8 @@ TEST(TestRobotiqGripperHardwareInterface, UseDummyActivatesAndFollowsCommands)
 
    // Half closed, in joint radians against the 0.7929 closed position.
    constexpr double kTarget = 0.4;
-   const bool success = command.set_value(kTarget);
-   ASSERT_TRUE(success);
-   ASSERT_EQ(hardware_interface::return_type::OK, rm.write(time, period).result);
+   ASSERT_TRUE(compat::setValue(command, kTarget));
+   ASSERT_TRUE(compat::readWriteOk(rm.write(time, period)));
 
    // The simulated gripper teleports, but the SDK's exchange cycle still has
    // to carry the command and bring the status back.
@@ -191,12 +192,12 @@ TEST(TestRobotiqGripperHardwareInterface, UseDummyActivatesAndFollowsCommands)
    bool reached = false;
    while(!reached && std::chrono::steady_clock::now() < deadline)
    {
-      ASSERT_EQ(hardware_interface::return_type::OK, rm.read(time, period).result);
-      reached = std::abs(position.get_optional().value_or(0.0) - kTarget) < 0.01;
+      ASSERT_TRUE(compat::readWriteOk(rm.read(time, period)));
+      reached = std::abs(compat::getValue(position).value_or(0.0) - kTarget) < 0.01;
       std::this_thread::sleep_for(std::chrono::milliseconds{5});
    }
    EXPECT_TRUE(reached) << "joint position never followed the command; last read "
-                        << position.get_optional().value_or(0.0);
+                        << compat::getValue(position).value_or(0.0);
 }
 
 namespace {

@@ -29,7 +29,12 @@
 
 #include <robotiq_driver/hardware_parameters.hpp>
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 
 #include <rclcpp/logging.hpp>

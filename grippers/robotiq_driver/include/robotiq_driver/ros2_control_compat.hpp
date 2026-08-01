@@ -51,4 +51,5 @@ using OnInitParams = hardware_interface::HardwareComponentInterfaceParams;
 #else
 using OnInitParams = hardware_interface::HardwareInfo;
 #endif
+
 } // namespace robotiq_driver
