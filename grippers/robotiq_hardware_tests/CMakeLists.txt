@@ -38,4 +38,11 @@ add_executable(full_test
 # reach Robotiq::Gripper — there is no second package to find.
 target_link_libraries(full_test robotiq_driver::robotiq_driver)
 
+# Without this the executable only ever exists under build/, so
+# `ros2 run robotiq_hardware_tests full_test` cannot find it.
+install(
+  TARGETS full_test
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

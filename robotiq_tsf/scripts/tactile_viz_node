@@ -139,7 +139,7 @@ class TactileVizNode(Node):
         self._vmax = float(p("vmax").value)
         if self._vmax <= self._vmin:
             self._vmax = self._vmin + 1.0
-            self.get_logger().warn(
+            self.get_logger().warning(
                 f'vmax ({p("vmax").value}) <= vmin ({self._vmin}); '
                 f"using vmax = {self._vmax}"
             )
@@ -238,7 +238,7 @@ class TactileVizNode(Node):
         for fi in (0, 1):
             values = msg.taxels[fi].values
             if len(values) != _TAXELS:
-                self.get_logger().warn(
+                self.get_logger().warning(
                     f"finger_{fi}: expected {_TAXELS} taxels, got {len(values)}",
                     throttle_duration_sec=2.0,
                 )

@@ -28,6 +28,8 @@
 
 #include "robotiq_controllers/robotiq_activation_controller.hpp"
 
+#include "robotiq_controllers/ros2_control_compat.hpp"
+
 namespace robotiq_controllers {
 controller_interface::InterfaceConfiguration RobotiqActivationController::command_interface_configuration() const
 {
@@ -106,12 +108,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Roboti
 bool RobotiqActivationController::reactivateGripper(std_srvs::srv::Trigger::Request::SharedPtr /*req*/,
                                                     std_srvs::srv::Trigger::Response::SharedPtr resp)
 {
-   resp->success = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].set_value(ASYNC_WAITING);
-   resp->success &= command_interfaces_[REACTIVATE_GRIPPER_CMD].set_value(1.0);
+   resp->success = compat::setValue(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE], ASYNC_WAITING);
+   resp->success &= compat::setValue(command_interfaces_[REACTIVATE_GRIPPER_CMD], 1.0);
 
    while(true)
    {
-      const auto maybe_value = command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional();
+      const auto maybe_value = compat::getValue(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE]);
       if(maybe_value && maybe_value.value() != ASYNC_WAITING)
       {
          break;
@@ -120,7 +122,8 @@ bool RobotiqActivationController::reactivateGripper(std_srvs::srv::Trigger::Requ
    }
    // NOTE: This was previously using get_value() and implicitly casting to bool, so keeping the old behavior.
    // However, note that the value of this result is actually a double, so this should be revised in the future.
-   resp->success &= static_cast<bool>(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE].get_optional().value_or(false));
+   resp->success &=
+      static_cast<bool>(compat::getValue(command_interfaces_[REACTIVATE_GRIPPER_RESPONSE]).value_or(false));
 
    return resp->success;
 }

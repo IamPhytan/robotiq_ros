@@ -40,6 +40,7 @@
 #include <robotiq_driver/rclcpp_logger.hpp>
 
 #include <Robotiq/gripper/fake/gripper_factory.hpp>
+#include <Robotiq/gripper/wait.hpp>
 
 #include <hardware_interface/actuator_interface.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
@@ -55,6 +56,20 @@ constexpr auto kDiagnosticThrottleMs = 5000;
 // exchange cycle sends it within a cycle or two; this only has to outlast a
 // retry or a lost frame.
 constexpr auto kDeactivationTimeout = std::chrono::seconds{2};
+
+// Where on_activate leaves the fingers. Fully open matches what the gripper does
+// on its own and what the driver did before the SDK; a parameter could choose it
+// instead, which would save the travel when the caller wants them elsewhere.
+constexpr uint8_t kPostActivationPosition = robotiq_driver::kGripperMinPos;
+
+// Waiting out that move, following the SDK's move_gripper example: how long the
+// gripper has to echo the request, how long to watch for the motion to start
+// (advisory — a short move can finish first), and the cap on the move itself.
+// The sequence below is the example's; it belongs in the SDK as a shared moveTo
+// so both callers get it from one place.
+constexpr auto kCommandEchoTimeout = std::chrono::seconds{1};
+constexpr auto kMotionStartTimeout = std::chrono::milliseconds{200};
+constexpr auto kMotionTimeout = std::chrono::seconds{5};
 
 namespace robotiq_driver {
 namespace {
@@ -97,8 +112,7 @@ std::unique_ptr<Robotiq::Gripper> RobotiqGripperHardwareInterface::createGripper
    return std::make_unique<Robotiq::Gripper>(parameters_.connection, logger_);
 }
 
-hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(
-   const hardware_interface::HardwareComponentInterfaceParams& params)
+hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(const OnInitParams& params)
 {
    RCLCPP_DEBUG(kLogger, "on_init");
 
@@ -309,6 +323,49 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_activate(
                    static_cast<int>(parameters_.activation_timeout.count()));
       return CallbackReturn::ERROR;
    }
+
+   // Activation completes with the fingers closed, and the gripper re-opens them
+   // afterwards on its own. Command that move instead of waiting it out: the
+   // courtesy move runs with rGTO clear, and gOBJ only describes motion while
+   // rGTO is set, so it reads "moving" throughout and never settles. Commanding
+   // sets rGTO and makes gOBJ mean what the SDK's move_gripper example relies on.
+   //
+   // Something has to wait for it either way. Publishing a position mid-move
+   // hands a controller that seeds its hold target from the position state —
+   // both gripper_controllers and parallel_gripper_controller do — a half-closed
+   // pose to latch, which stops the fingers there.
+   command_.positionRequest = kPostActivationPosition;
+   command_.action.set(Robotiq::ActionRequestBit::GoTo);
+   gripper_->setCommand(command_);
+
+   if(!Robotiq::waitFor([&] { return gripper_->getStatus().positionRequestEcho == kPostActivationPosition; },
+                        kCommandEchoTimeout))
+   {
+      RCLCPP_WARN(kLogger, "The gripper never echoed the post-activation position request.");
+   }
+   else if(!Robotiq::waitFor(
+              [&] { return gripper_->getStatus().gripperStatus.objectDetection() == Robotiq::ObjectDetection::Moving; },
+              kMotionStartTimeout))
+   {
+      RCLCPP_DEBUG(kLogger, "No motion seen after the post-activation command; the fingers may already be there.");
+   }
+
+   if(!Robotiq::waitFor(
+         [&] { return gripper_->getStatus().gripperStatus.objectDetection() != Robotiq::ObjectDetection::Moving; },
+         kMotionTimeout))
+   {
+      RCLCPP_WARN(kLogger,
+                  "The gripper had not settled %d ms after the post-activation command; publishing its position "
+                  "anyway.",
+                  static_cast<int>(std::chrono::milliseconds{kMotionTimeout}.count()));
+   }
+   const Robotiq::GripperStatus status = gripper_->getStatus();
+
+   // Seed both sides from that settled reading so the first exported state, and
+   // any hold target derived from it, describe where the fingers actually are.
+   gripper_position_ = jointPositionFromRegister(status.position, parameters_.closed_position);
+   gripper_velocity_ = 0.0;
+   gripper_position_command_ = gripper_position_;
 
    RCLCPP_INFO(kLogger, "Robotiq Gripper successfully activated!");
    return CallbackReturn::SUCCESS;

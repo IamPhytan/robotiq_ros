@@ -2,7 +2,7 @@
 <package format="3">
   <name>robotiq_tsf</name>
   <version>1.0.0</version>
-  <description>ROS 2 Jazzy tactile sensing package for the Robotiq TSF-85.</description>
+  <description>ROS 2 tactile sensing package for the Robotiq TSF-85 (Humble, Jazzy, Lyrical).</description>
 
   <maintainer email="jean-philippe.roberge@etsmtl.ca">Jean-Philippe Roberge</maintainer>
   <maintainer email="jenkwia@example.com">Jen Kwia</maintainer>

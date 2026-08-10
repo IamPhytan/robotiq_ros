@@ -5,8 +5,12 @@
 # incomplete ROS install (missing ament_package / rosidl_typesupport_c /
 # librcl_action.so), which flaked this job; the container removes that class of
 # failure.
-# Distro policy: LTS only — matrix is [jazzy] now, add lyrical when it ships
-# (see ros-driver distro-compat policy; distro pairs with its Ubuntu LTS).
+# Distro policy: the three live LTS distros are what we support, and their jobs
+# gate merges (see ros-driver distro-compat policy; each distro pairs with its
+# Ubuntu LTS). Rolling is built too, but non-blocking: it is a moving target that
+# goes red for upstream reasons unrelated to the PR under review, so it buys early
+# warning without putting someone on triage duty. Kilted and other non-LTS
+# releases are deliberately not built.
 name: ROS Build & Test
 
 on:
@@ -20,15 +24,27 @@ on:
 jobs:
   build_and_test:
     name: colcon test (${{ matrix.ros_distro }})
-    runs-on: ${{ matrix.os }}
+    # The distro comes entirely from the container image (humble = jammy,
+    # jazzy = noble, lyrical and rolling = resolute), so the host runner only has
+    # to provide Docker. Pinning every job to one current runner label keeps the
+    # matrix off the retirement schedule of the older ubuntu-* images.
+    runs-on: ubuntu-24.04
     container:
       image: ros:${{ matrix.ros_distro }}-ros-base
+    # Only the supported (LTS) distros gate the merge; see the header comment.
+    continue-on-error: ${{ !matrix.blocking }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          - ros_distro: humble
+            blocking: true
           - ros_distro: jazzy
-            os: ubuntu-24.04
+            blocking: true
+          - ros_distro: lyrical
+            blocking: true
+          - ros_distro: rolling
+            blocking: false
     steps:
       # ros-base is minimal: it lacks git (needed by actions/checkout) and the
       # colcon coverage plugins that action-ros-ci invokes by default

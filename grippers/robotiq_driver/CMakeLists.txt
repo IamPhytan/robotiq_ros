@@ -1,7 +1,9 @@
 # See https://docs.ros.org/en/humble/How-To-Guides/Ament-CMake-Documentation.html
 
 cmake_minimum_required(VERSION 3.10)
-project(robotiq_driver LANGUAGES CXX)
+# C as well as CXX: the gripper SDK added below is a C/C++ project, and CMake 4
+# wants the language enabled here before the subproject asks for it.
+project(robotiq_driver LANGUAGES C CXX)
 
 # This module provides installation directories as per the GNU coding standards.
 include(GNUInstallDirs)
@@ -46,9 +48,6 @@ set(_robotiq_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
 set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(${GRIPPERS_SDK_DIR} ${CMAKE_CURRENT_BINARY_DIR}/grippers_sdk EXCLUDE_FROM_ALL)
 set(BUILD_SHARED_LIBS "${_robotiq_saved_build_shared_libs}")
-# A static archive going into a shared plugin has to be position-independent.
-# CMake cannot set properties through the Robotiq::grippers alias.
-set_target_properties(grippers_sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 ###############################################################################
 # Robotiq driver library.
@@ -60,6 +59,7 @@ add_library(
   include/robotiq_driver/hardware_interface.hpp
   include/robotiq_driver/hardware_parameters.hpp
   include/robotiq_driver/rclcpp_logger.hpp
+  include/robotiq_driver/ros2_control_compat.hpp
   include/robotiq_driver/visibility_control.hpp
   # Signposts for the headers this package used to install, so downstream
   # code that includes one stops with an explanation instead of a
@@ -98,18 +98,17 @@ target_link_libraries(
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
   PRIVATE
-  # $<BUILD_INTERFACE:...> keeps the statically-linked SDK out of the installed
-  # export set, where there would be no target for it to resolve to.
-  # WHOLE_ARCHIVE (CMake 3.24+, satisfied from Jazzy's 24.04 on) because the
-  # SDK's headers ship with this package: a consumer may call any SDK entry
-  # point, so every SDK object has to land in the library — not just the
-  # ones the wrapper itself references.
+  # The SDK's object library, not its archive: the SDK's headers ship with this
+  # package, so a consumer may call any SDK entry point and every object has to
+  # land in the library, not just the ones the wrapper references.
+  # $<BUILD_INTERFACE:...> keeps it out of the installed export set, where there
+  # would be no target for it to resolve to.
   #
   # The consequence to know about: the whole SDK symbol set is exported from a
   # dlopen'd plugin. A second package in the same process linking the SDK the
   # same way gets its own copy with independent static state, and Robotiq::Gripper
   # owns a serial link and a thread. One SDK consumer per process.
-  $<BUILD_INTERFACE:$<LINK_LIBRARY:WHOLE_ARCHIVE,Robotiq::grippers>>
+  $<BUILD_INTERFACE:Robotiq::grippers_objects>
 )
 
 ###############################################################################

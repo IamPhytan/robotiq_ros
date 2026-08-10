@@ -45,6 +45,8 @@
 #include <robotiq_driver/hardware_parameters.hpp>
 #include <robotiq_driver/visibility_control.hpp>
 
+#include <robotiq_driver/ros2_control_compat.hpp>
+
 #include <Robotiq/gripper.hpp>
 
 #include <hardware_interface/handle.hpp>
@@ -76,12 +78,14 @@ public:
    /**
     * Read and validate the hardware parameters and the joint's interfaces.
     * Performs no I/O — the link is opened in on_configure.
-    * @param params Structure with parameters for initializing this hardware component.
+    * @param params Structure with parameters for initializing this hardware component
+    * (a HardwareComponentInterfaceParams from Jazzy on, a HardwareInfo on Humble —
+    * see ros2_control_compat.hpp).
     * @returns CallbackReturn::SUCCESS if required data are provided and can be
     * parsed or CallbackReturn::ERROR if any error happens or data are missing.
     */
    ROBOTIQ_DRIVER_PUBLIC
-   CallbackReturn on_init(const hardware_interface::HardwareComponentInterfaceParams& params) override;
+   CallbackReturn on_init(const OnInitParams& params) override;
 
    /**
     * Open the serial link and start the SDK exchange cycle. Constructing the

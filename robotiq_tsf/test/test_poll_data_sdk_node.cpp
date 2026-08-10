@@ -56,10 +56,14 @@ std::map<std::string, std::vector<std::string>> waitForNames(const rclcpp::Node:
 {
    using namespace std::chrono; // NOLINT(build/namespaces)
    const auto deadline = steady_clock::now() + seconds(10);
+   // Executor rather than the free rclcpp::spin_some(node), which is deprecated
+   // from Lyrical on.
+   rclcpp::executors::SingleThreadedExecutor executor;
+   executor.add_node(node);
    std::map<std::string, std::vector<std::string>> names;
    while(steady_clock::now() < deadline)
    {
-      rclcpp::spin_some(node);
+      executor.spin_some();
       names = query();
       bool all = true;
       for(const auto& e : expected)

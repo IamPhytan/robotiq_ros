@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Build and run the single ROS 2 Jazzy image for the robotiq ros workspace
+# Build and run the single ROS 2 image for the robotiq ros workspace
 # (robotiq_tsf sensor + grippers).
 #
 # Usage:
 #   ./run.sh build                  # build the image only
 #   ./run.sh [gripper|sensor|both]  # build if needed, then launch a shell with
 #                                   # that product's devices mapped (default: gripper)
+#
+# Distro defaults to jazzy; humble and lyrical are equally supported:
+#   ROS_DISTRO=humble ./run.sh gripper
 #
 # Inside the container the workspace is already built and sourced:
 #   gripper bringup : ros2 launch robotiq_description robotiq_control.launch.py
@@ -15,8 +18,11 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-IMG="${IMG:-robotiq_ros2:jazzy}"
-CONTAINER="${CONTAINER:-robotiq_ros2}"
+DISTRO="${ROS_DISTRO:-jazzy}"
+# One image and one container name per distro, so switching distros does not
+# silently reuse the other one's build.
+IMG="${IMG:-robotiq_ros2:${DISTRO}}"
+CONTAINER="${CONTAINER:-robotiq_ros2_${DISTRO}}"
 PRODUCT="${1:-gripper}"
 HELPERS="${ROOT}/extern/tactile_sensors/utils/scripts"
 
@@ -34,8 +40,9 @@ log() { echo "[${1}] ${*:2}"; }   # log <tag> <message...>  e.g. log gripper "..
 # Our unified sensor+grippers image is built from this repo's docker/Dockerfile,
 # so we provision it locally below.
 build_image() {
-  log "${PRODUCT}" "building image ${IMG} (context: ${ROOT}) ..."
-  docker build -f "${SCRIPT_DIR}/Dockerfile" -t "${IMG}" "${ROOT}"
+  log "${PRODUCT}" "building image ${IMG} for ROS ${DISTRO} (context: ${ROOT}) ..."
+  docker build --build-arg "ROS_DISTRO=${DISTRO}" \
+    -f "${SCRIPT_DIR}/Dockerfile" -t "${IMG}" "${ROOT}"
 }
 
 log "${PRODUCT}" "checking Docker installation ..."
