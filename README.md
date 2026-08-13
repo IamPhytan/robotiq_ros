@@ -5,7 +5,7 @@ ROS packages for Robotiq grippers and sensors.
 | Package | Description | ROS Version |
 |---|---|---|
 | [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Humble / Jazzy / Lyrical ([main](https://github.com/robotiq/ros/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ros/tree/noetic)) |
-| [grippers](grippers/) | ROS 2 driver for Robotiq grippers (2F-85/140, Hand-E) — vendored from [PickNik](https://github.com/PickNikRobotics/ros2_robotiq_gripper) | ROS 2 Humble / Jazzy / Lyrical |
+| [grippers](grippers/) | ROS 2 `ros2_control` driver for Robotiq grippers (2F-85/140, Hand-E), on the [Robotiq C++ SDK](https://github.com/Robotiq/grippers) | ROS 2 Humble / Jazzy / Lyrical |
 
 ## Supported ROS 2 distros
 
@@ -124,7 +124,21 @@ In the combined launch the pad frames are TF-mounted on the gripper fingertip li
 
 ROS 2 `ros2_control` driver for Robotiq grippers (2F-85 / 2F-140, Hand-E), under [`grippers/`](grippers/).
 
-`grippers/` is a vendored copy of PickNik Robotics' [`ros2_robotiq_gripper`](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause), imported via `git subtree` at upstream commit `3b6cf8f` with its history preserved, and maintained here in-tree. Upstream copyright and `<author>` tags are retained.
+The driver runs on the [Robotiq C++ grippers SDK](https://github.com/Robotiq/grippers), which arrives as
+the `extern/grippers` submodule — so clone with `--recurse-submodules`. The SDK owns the serial link
+and the Modbus exchange (one FC 0x17 transaction per cycle, on its own thread); `robotiq_driver` is
+the `ros2_control` layer above it, and its `read()` / `write()` copy the SDK's process image rather
+than touching the bus.
+
+**Robotiq maintains this driver.** It started from PickNik Robotics'
+[`ros2_robotiq_gripper`](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause),
+imported with `git subtree` at upstream commit `3b6cf8f` so its history came along, and has been
+developed here since: the in-tree Modbus implementation and the `vcs import`ed `serial` package it
+depended on were replaced by the SDK, three distros build from one branch, and bugs still open
+upstream ([#114](https://github.com/PickNikRobotics/ros2_robotiq_gripper/issues/114),
+[#88](https://github.com/PickNikRobotics/ros2_robotiq_gripper/issues/88)) are fixed here. Upstream
+copyright and `<author>` tags are retained; issues and support go to
+[robotiq/ros/issues](https://github.com/robotiq/ros/issues), not to PickNik.
 
 ### Migrating from PickNik's ros2_robotiq_gripper
 
