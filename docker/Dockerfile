@@ -96,6 +96,6 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /ws/install /ws/install
 
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc \
-    && echo "source /ws/install/setup.bash"            >> /root/.bashrc
+ && echo "source /ws/install/setup.bash"            >> /root/.bashrc
 WORKDIR /ws
 ENTRYPOINT ["/bin/bash"]
