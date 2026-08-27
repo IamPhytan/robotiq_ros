@@ -23,15 +23,14 @@ ENV TZ=Etc/UTC
 # action controller: gripper_controllers on Humble, parallel_gripper_controller
 # on Jazzy and newer.
 RUN apt-get update && apt-get install -y \
-    pkg-config \
-    python3-colcon-common-extensions python3-rosdep \
-    libserialport-dev \
-    ros-${ROS_DISTRO}-ros2-control \
-    ros-${ROS_DISTRO}-ros2-controllers \
-    ros-${ROS_DISTRO}-controller-manager \
-    ros-${ROS_DISTRO}-xacro \
-    ros-${ROS_DISTRO}-robot-state-publisher \
-    ros-${ROS_DISTRO}-joint-state-publisher \
+        pkg-config \
+        python3-colcon-common-extensions python3-rosdep \
+        ros-${ROS_DISTRO}-ros2-control \
+        ros-${ROS_DISTRO}-ros2-controllers \
+        ros-${ROS_DISTRO}-controller-manager \
+        ros-${ROS_DISTRO}-xacro \
+        ros-${ROS_DISTRO}-robot-state-publisher \
+        ros-${ROS_DISTRO}-joint-state-publisher \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rosdep init 2>/dev/null || true; rosdep update
@@ -56,12 +55,12 @@ RUN touch /ws/src/extern/grippers/sdk_cpp/COLCON_IGNORE
 # BUILD_TESTING=OFF: this is a deployment image; tests are not run here.
 RUN apt-get update \
     && rosdep install --from-paths /ws/src --ignore-src -y --rosdistro ${ROS_DISTRO} \
-    --dependency-types buildtool --dependency-types build \
-    --dependency-types build_export --dependency-types buildtool_export \
-    --dependency-types exec \
+        --dependency-types buildtool --dependency-types build \
+        --dependency-types build_export --dependency-types buildtool_export \
+        --dependency-types exec \
     && rm -rf /var/lib/apt/lists/* \
     && bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash \
-    && cd /ws && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
+        && cd /ws && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
 
 ##########################  runtime (default)  ########################
 # ros-core (not ros-base): the minimal ROS layer, without build-essential /
@@ -79,19 +78,19 @@ ENV TZ=Etc/UTC
 # GUI tools (rviz2/rqt/joint-state-publisher-gui/terminator) are optional; drop
 # them for headless robots with --build-arg WITH_GUI=false.
 RUN apt-get update && apt-get install -y \
-    libserialport0 \
-    ros-${ROS_DISTRO}-ros2-control \
-    ros-${ROS_DISTRO}-ros2-controllers \
-    ros-${ROS_DISTRO}-controller-manager \
-    ros-${ROS_DISTRO}-xacro \
-    ros-${ROS_DISTRO}-robot-state-publisher \
-    ros-${ROS_DISTRO}-joint-state-publisher \
+        libserialport0 \
+        ros-${ROS_DISTRO}-ros2-control \
+        ros-${ROS_DISTRO}-ros2-controllers \
+        ros-${ROS_DISTRO}-controller-manager \
+        ros-${ROS_DISTRO}-xacro \
+        ros-${ROS_DISTRO}-robot-state-publisher \
+        ros-${ROS_DISTRO}-joint-state-publisher \
     && if [ "${WITH_GUI}" = "true" ]; then apt-get install -y \
-    terminator \
-    ros-${ROS_DISTRO}-rviz2 \
-    ros-${ROS_DISTRO}-joint-state-publisher-gui \
-    ros-${ROS_DISTRO}-rqt \
-    ros-${ROS_DISTRO}-rqt-controller-manager ; fi \
+        terminator \
+        ros-${ROS_DISTRO}-rviz2 \
+        ros-${ROS_DISTRO}-joint-state-publisher-gui \
+        ros-${ROS_DISTRO}-rqt \
+        ros-${ROS_DISTRO}-rqt-controller-manager ; fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /ws/install /ws/install

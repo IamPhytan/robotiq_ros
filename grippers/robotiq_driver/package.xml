@@ -18,9 +18,7 @@
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
 
-  <!-- Serial backend of the gripper SDK compiled in from extern/grippers.
-       No rosdep rule exists for the bare key; installed explicitly in
-       docker/Dockerfile and in CI. -->
+  <!-- Serial backend of the gripper SDK compiled in from extern/grippers. -->
   <depend>libserialport-dev</depend>
 
   <!-- Check code against style conventions using clang-format. -->
