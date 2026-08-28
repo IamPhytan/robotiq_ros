@@ -18,7 +18,7 @@ ARG ROS_DISTRO
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# Build tooling + sensor build deps (libserialport, via pkg-config) + gripper
+# Build tooling + sensor build deps + gripper
 # build deps (ros2_control stack). ros2-controllers brings the distro's gripper
 # action controller: gripper_controllers on Humble, parallel_gripper_controller
 # on Jazzy and newer.
